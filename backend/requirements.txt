@@ -1,0 +1,22 @@
+# --- Core (Part 1) ---
+fastapi>=0.110
+uvicorn[standard]>=0.29
+sqlalchemy>=2.0
+pydantic>=2.6
+pydantic-settings>=2.2
+python-multipart>=0.0.9
+
+# --- Video processing (Part 2) ---
+opencv-python-headless>=4.9
+scenedetect[opencv]>=0.6.3
+
+# --- OCR (Part 3, 무거움 - ENABLE_OCR=false면 설치 생략 가능) ---
+easyocr>=1.7
+
+# --- STT (Part 3 - ENABLE_STT=false면 설치 생략 가능) ---
+faster-whisper>=1.0
+
+# --- 한국어 형태소 분석 (선택) ---
+# ENABLE_KIWI=true일 때 명사 추출 정확도를 높인다.
+# 설치/실행 실패 시 자동으로 규칙 기반 추출로 fallback하므로 필수는 아니다.
+kiwipiepy>=0.17

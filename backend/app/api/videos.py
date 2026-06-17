@@ -1,0 +1,188 @@
+"""
+영상 API.
+
+POST   /api/videos                업로드 + 분석 시작
+GET    /api/videos/{id}           상세 (completed면 결과 포함)
+GET    /api/videos/{id}/status    상태만 빠르게
+DELETE /api/videos/{id}           파일/캡쳐/결과 삭제 (개인정보 보호)
+"""
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile
+from sqlalchemy.orm import Session
+
+from ..config import get_settings
+from ..database import get_db
+from ..models import Video, VideoStatus
+from ..schemas import (
+    SourceWeightsOut,
+    DeleteResponse,
+    SegmentOut,
+    StatusResponse,
+    StructureStageOut,
+    SummaryOut,
+    UploadResponse,
+    VideoDetailResponse,
+    YoutubeInfo,
+)
+from ..services.analyzer import run_analysis
+from ..services.storage import get_storage
+from ..utils.files import (
+    UploadValidationError,
+    ensure_inside,
+    make_stored_filename,
+    save_upload_streaming,
+    validate_upload_meta,
+)
+
+router = APIRouter(prefix="/api/videos", tags=["videos"])
+
+
+@router.post("", response_model=UploadResponse, status_code=201)
+async def upload_video(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+):
+    settings = get_settings()
+    storage = get_storage()
+
+    # 1. 검증 (확장자 + MIME)
+    try:
+        ext = validate_upload_meta(file)
+        stored_filename = make_stored_filename(ext)
+        dest = ensure_inside(settings.media_root_path, storage.video_path(stored_filename))
+        # 2. 스트리밍 저장 (용량 초과 시 즉시 중단)
+        await save_upload_streaming(file, dest, settings.max_upload_bytes)
+    except UploadValidationError as e:
+        raise HTTPException(status_code=400, detail=e.message)
+
+    # 3. DB record 생성
+    video = Video(
+        original_filename=(file.filename or "video")[:255],
+        stored_filename=stored_filename,
+        file_path=str(dest),
+        status=VideoStatus.UPLOADED,
+    )
+    db.add(video)
+    db.commit()
+    db.refresh(video)
+
+    # 4. 분석 시작 (응답 반환 후 배경에서 실행)
+    background_tasks.add_task(run_analysis, video.id)
+
+    return UploadResponse(id=video.id, status=video.status)
+
+
+def _get_video_or_404(db: Session, video_id: str) -> Video:
+    # video_id는 항상 우리가 만든 32자리 hex라서 그대로 조회해도 안전하지만,
+    # 형식 검증을 한 번 더 해서 이상한 입력을 빠르게 거른다.
+    if not video_id.isalnum() or len(video_id) > 64:
+        raise HTTPException(status_code=404, detail="영상을 찾을 수 없어요.")
+    video = db.get(Video, video_id)
+    if video is None:
+        raise HTTPException(status_code=404, detail="영상을 찾을 수 없어요.")
+    return video
+
+
+@router.get("/{video_id}", response_model=VideoDetailResponse)
+def get_video(video_id: str, db: Session = Depends(get_db)):
+    video = _get_video_or_404(db, video_id)
+
+    summary = None
+    segments: list[SegmentOut] = []
+    if video.status == VideoStatus.COMPLETED:
+        if video.summary:
+            sw_raw = video.summary.source_weights or {}
+            summary = SummaryOut(
+                topic=video.summary.topic,
+                purpose=video.summary.purpose,
+                difficulty=video.summary.difficulty,
+                category=video.summary.category,
+                confidence=video.summary.confidence,
+                confidence_reason=video.summary.confidence_reason,
+                detected_keywords=video.summary.detected_keywords,
+                primary_source=video.summary.primary_source,
+                source_weights=SourceWeightsOut(
+                    ocr=sw_raw.get("ocr", 0.0),
+                    stt=sw_raw.get("stt", 0.0),
+                    metadata=sw_raw.get("metadata", sw_raw.get("filename", 0.0)),
+                ),
+                metadata_used=video.summary.metadata_used,
+                metadata_keywords=video.summary.metadata_keywords,
+                recommended_audience=video.summary.recommended_audience,
+                try_points=video.summary.try_points,
+                caution_points=video.summary.caution_points,
+                hook_type=video.summary.hook_type,
+                hook_reason=video.summary.hook_reason,
+                hook_strength=video.summary.hook_strength,
+                structure=[
+                    StructureStageOut(**s) for s in video.summary.structure
+                ],
+                success_patterns=video.summary.success_patterns,
+                creator_tips=video.summary.creator_tips,
+            )
+        segments = [
+            SegmentOut(
+                id=s.id.split(f"{video.id}_")[-1],  # 응답에는 segment_001 형태로
+                start=s.start_time,
+                end=s.end_time,
+                title=s.title,
+                description=s.description,
+                thumbnail_url=s.thumbnail_url,
+                ocr_text=s.ocr_text or "",
+                speech_text=s.speech_text or "",
+                learn_point=s.learn_point or "",
+                features=s.features,
+            )
+            for s in video.segments
+        ]
+
+    youtube_info = None
+    if video.source_type == "youtube":
+        youtube_info = YoutubeInfo(
+            video_id=video.youtube_video_id,
+            title=video.youtube_title,
+            thumbnail_url=video.youtube_thumbnail_url,
+            source_url=video.source_url,
+        )
+
+    return VideoDetailResponse(
+        id=video.id,
+        status=video.status,
+        current_step=video.current_step,
+        filename=video.original_filename,
+        source_type=video.source_type,
+        youtube=youtube_info,
+        duration=video.duration,
+        width=video.width,
+        height=video.height,
+        fps=video.fps,
+        aspect_ratio=video.aspect_ratio,
+        error_message=video.error_message,
+        summary=summary,
+        segments=segments,
+    )
+
+
+@router.get("/{video_id}/status", response_model=StatusResponse)
+def get_video_status(video_id: str, db: Session = Depends(get_db)):
+    video = _get_video_or_404(db, video_id)
+    return StatusResponse(
+        id=video.id,
+        status=video.status,
+        current_step=video.current_step,
+        error_message=video.error_message,
+    )
+
+
+@router.delete("/{video_id}", response_model=DeleteResponse)
+def delete_video(video_id: str, db: Session = Depends(get_db)):
+    video = _get_video_or_404(db, video_id)
+    storage = get_storage()
+
+    # 파일 + 캡쳐 삭제
+    storage.delete_video_data(video.stored_filename, video.id)
+    # DB 삭제 (segments/summary는 cascade)
+    db.delete(video)
+    db.commit()
+
+    return DeleteResponse(id=video_id, deleted=True, message="영상과 분석 결과를 모두 지웠어요.")
