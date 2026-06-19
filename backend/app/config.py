@@ -54,6 +54,9 @@ class Settings(BaseSettings):
     # --- CORS ---
     # 쉼표로 구분. 개발 기본값은 Next.js dev 서버.
     CORS_ORIGINS: str = "http://localhost:3000"
+    # Vercel preview 도메인 등 패턴 매칭이 필요할 때 사용 (예: https://.*\.vercel\.app)
+    # 비우면 사용 안 함. CORS_ORIGINS와 함께 동작한다.
+    CORS_ORIGIN_REGEX: str = r"https://.*\.vercel\.app"
 
     # ----- 파생 값 -----
     @property

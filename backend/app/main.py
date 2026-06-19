@@ -39,26 +39,33 @@ app = FastAPI(title="Shorts Study Helper API", version="0.1.0", lifespan=lifespa
 # ---------------------------------------------------------------------------
 # CORS (라우터 등록보다 먼저 적용)
 # ---------------------------------------------------------------------------
-# CORS_ORIGINS 환경변수를 comma split해서 읽고, 비어 있으면 ["*"]를 기본값으로 사용.
+# CORS_ORIGINS 환경변수를 comma split해서 읽는다.
 origins = settings.CORS_ORIGINS
 if isinstance(origins, str):
     origins = [o.strip() for o in origins.split(",") if o.strip()]
+
+# Vercel은 배포마다 preview 도메인이 바뀌므로, 목록 대신 정규식으로도 허용한다.
+# (예: https://shorts-study-helper-clean-xxxx.vercel.app)
+origin_regex = (settings.CORS_ORIGIN_REGEX or "").strip() or None
+
+# 명시 목록이 비어 있을 때만 기본값을 정한다.
+# - regex가 있으면 목록은 비워 두고 regex로 매칭 (정확한 origin을 응답에 반영).
+# - regex도 없으면 모든 출처 허용(["*"]) 으로 둔다.
 if not origins:
-    origins = ["*"]
+    origins = [] if origin_regex else ["*"]
 
-# allow_origins=["*"] 와 allow_credentials=True 는 브라우저가 거부한다(충돌).
-# 쿠키/인증을 쓰지 않으므로 credentials=False 로 두고 와일드카드를 허용한다.
-allow_credentials = origins != ["*"]
-
+# allow_credentials=False 로 둔다. 쿠키/인증을 쓰지 않으며,
+# allow_origins=["*"] 와 credentials=True 는 브라우저가 거부하기 때문.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
-    allow_credentials=allow_credentials,
+    allow_origin_regex=origin_regex,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-logger.info("CORS allow_origins=%s credentials=%s", origins, allow_credentials)
+logger.info("CORS allow_origins=%s allow_origin_regex=%s", origins, origin_regex)
 
 app.include_router(videos_router)
 app.include_router(youtube_router)
