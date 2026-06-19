@@ -128,14 +128,9 @@ class VideoSummary(Base):
     hook_type: Mapped[str] = mapped_column(String(40), default="")            # 훅 유형
     hook_reason: Mapped[str] = mapped_column(Text, default="")                # 왜 효과적인가
     hook_strength: Mapped[int] = mapped_column(default=0)                     # 0~100
-    structure_json: Mapped[str] = mapped_column(Text, default="[]")           # 영상 구조 단계 배열(타임라인)
+    structure_json: Mapped[str] = mapped_column(Text, default="[]")           # 영상 구조 단계 배열
     success_patterns_json: Mapped[str] = mapped_column(Text, default="[]")    # 성공 법칙
     creator_tips_json: Mapped[str] = mapped_column(Text, default="[]")        # 제작 팁
-    # 더 풍부한 분석 (LLM provider가 채움; 규칙 기반은 비어 있을 수 있음)
-    analysis_summary: Mapped[str] = mapped_column(Text, default="")           # 3~5문장 요약
-    engagement_factors_json: Mapped[str] = mapped_column(Text, default="[]")  # 몰입 요소
-    structure_detail_json: Mapped[str] = mapped_column(Text, default="{}")    # opening/development/climax/ending {content,purpose}
-    analysis_provider: Mapped[str] = mapped_column(String(20), default="rule")  # rule / llm
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
@@ -229,22 +224,3 @@ class VideoSummary(Base):
     @creator_tips.setter
     def creator_tips(self, v: list[str]) -> None:
         self.creator_tips_json = json.dumps(v, ensure_ascii=False)
-
-    @property
-    def engagement_factors(self) -> list[str]:
-        return self._get(self.engagement_factors_json)
-
-    @engagement_factors.setter
-    def engagement_factors(self, v: list[str]) -> None:
-        self.engagement_factors_json = json.dumps(v, ensure_ascii=False)
-
-    @property
-    def structure_detail(self) -> dict:
-        try:
-            return json.loads(self.structure_detail_json or "{}")
-        except json.JSONDecodeError:
-            return {}
-
-    @structure_detail.setter
-    def structure_detail(self, v: dict) -> None:
-        self.structure_detail_json = json.dumps(v, ensure_ascii=False)

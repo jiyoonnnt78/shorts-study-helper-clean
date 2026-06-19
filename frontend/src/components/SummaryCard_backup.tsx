@@ -38,12 +38,6 @@ export default function SummaryCard({ summary }: { summary: Summary }) {
       </h2>
       <p className="mt-2 text-base text-ink/70">{summary.purpose}</p>
 
-      {summary.analysis_summary && summary.analysis_summary.trim() && (
-        <p className="mt-3 rounded-2xl bg-blueberry-soft px-4 py-3 text-sm leading-relaxed text-ink/80">
-          {summary.analysis_summary}
-        </p>
-      )}
-
       <div className="mt-4">
         <ConfidenceGauge
           confidence={summary.confidence}

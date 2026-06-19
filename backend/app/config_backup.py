@@ -41,16 +41,6 @@ class Settings(BaseSettings):
     # 꺼져 있으면 제목/설명/썸네일 등 메타데이터 기반 사전 분석만 수행한다.
     ENABLE_YOUTUBE_DOWNLOAD: bool = False
 
-    # --- LLM 분석 (선택) ---
-    # true이고 API 키가 있으면 LLM으로 더 풍부한 분석을 시도한다.
-    # 키가 없거나 호출 실패 시 자동으로 규칙 기반 분석으로 fallback.
-    ENABLE_LLM_ANALYSIS: bool = False
-    LLM_PROVIDER: str = "openai"          # openai / anthropic (확장 가능)
-    LLM_API_KEY: str = ""                  # 비어 있으면 LLM 사용 안 함
-    LLM_MODEL: str = "gpt-4o-mini"         # 제공자별 모델명
-    LLM_BASE_URL: str = ""                 # 커스텀/호환 엔드포인트 (비우면 기본값)
-    LLM_TIMEOUT_SECONDS: int = 30
-
     # --- CORS ---
     # 쉼표로 구분. 개발 기본값은 Next.js dev 서버.
     CORS_ORIGINS: str = "http://localhost:3000"

@@ -18,7 +18,6 @@ from ..schemas import (
     SegmentOut,
     StatusResponse,
     StructureStageOut,
-    StructureDetailOut,
     SummaryOut,
     UploadResponse,
     VideoDetailResponse,
@@ -120,14 +119,6 @@ def get_video(video_id: str, db: Session = Depends(get_db)):
                 ],
                 success_patterns=video.summary.success_patterns,
                 creator_tips=video.summary.creator_tips,
-                analysis_summary=video.summary.analysis_summary,
-                engagement_factors=video.summary.engagement_factors,
-                structure_detail=(
-                    StructureDetailOut(**video.summary.structure_detail)
-                    if video.summary.structure_detail
-                    else None
-                ),
-                analysis_provider=video.summary.analysis_provider,
             )
         segments = [
             SegmentOut(

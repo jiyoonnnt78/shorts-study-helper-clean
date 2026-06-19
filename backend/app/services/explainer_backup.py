@@ -651,45 +651,12 @@ class RuleBasedExplainer(ExplainerAdapter):
             confidence=confidence,
         )
         sa = analyze_success_structure(s_inp)
-
-        # provider adapter: 기본 규칙 기반, 옵션으로 LLM이 보강/대체.
-        from .success_analyzer import to_analysis_result
-        from .analysis_provider import (
-            AnalysisInput, get_analysis_provider,
-        )
-
-        rule_result = to_analysis_result(s_inp, sa)
-        a_inp = AnalysisInput(
-            title=video.youtube_title or "",
-            description=video.youtube_description or "",
-            hashtags=video.youtube_hashtags or "",
-            ocr_text=doc.ocr_text,
-            stt_text=doc.stt_text,
-            duration=video.duration or 0.0,
-            category=category_out,
-            keywords=concepts.keywords[:8],
-        )
-        try:
-            result = get_analysis_provider().analyze(a_inp, rule_result)
-        except Exception:
-            logger.exception("분석 provider 실패 -> 규칙 결과 사용")
-            result = rule_result
-
-        summary.hook_type = result.hook_type or sa.hook_type
-        summary.hook_reason = result.hook_reason or sa.hook_reason
-        summary.hook_strength = result.hook_strength or sa.hook_strength
-        summary.structure = sa.structure  # 타임라인(시간축)은 규칙 기반 유지
-        summary.structure_detail = result.structure_detail
-        summary.success_patterns = result.success_patterns
-        summary.creator_tips = result.creator_tips
-        summary.engagement_factors = result.engagement_factors
-        summary.analysis_summary = result.summary
-        summary.analysis_provider = result.provider
-        # LLM이 더 나은 주제 문장을 줬으면 topic 보강 (규칙 topic이 약할 때만)
-        if result.provider == "llm" and result.summary:
-            if not summary.topic or summary.topic.startswith("영상 내용을 더"):
-                if result.topic:
-                    summary.topic = result.topic
+        summary.hook_type = sa.hook_type
+        summary.hook_reason = sa.hook_reason
+        summary.hook_strength = sa.hook_strength
+        summary.structure = sa.structure
+        summary.success_patterns = sa.success_patterns
+        summary.creator_tips = sa.creator_tips
         db.add(summary)
         db.commit()
         logger.info(

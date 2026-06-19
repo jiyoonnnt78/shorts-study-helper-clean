@@ -61,18 +61,6 @@ class StructureStageOut(BaseModel):
     end: float = 0.0
 
 
-class StructureStageDetailOut(BaseModel):
-    content: str = ""
-    purpose: str = ""
-
-
-class StructureDetailOut(BaseModel):
-    opening: StructureStageDetailOut = StructureStageDetailOut()
-    development: StructureStageDetailOut = StructureStageDetailOut()
-    climax: StructureStageDetailOut = StructureStageDetailOut()
-    ending: StructureStageDetailOut = StructureStageDetailOut()
-
-
 class SummaryOut(BaseModel):
     topic: str
     purpose: str
@@ -95,11 +83,6 @@ class SummaryOut(BaseModel):
     structure: list[StructureStageOut] = []
     success_patterns: list[str] = []
     creator_tips: list[str] = []
-    # 더 풍부한 분석 (LLM provider; 규칙 기반은 비어 있을 수 있음)
-    analysis_summary: str = ""
-    engagement_factors: list[str] = []
-    structure_detail: StructureDetailOut | None = None
-    analysis_provider: str = "rule"
 
 
 class VideoDetailResponse(BaseModel):

@@ -59,12 +59,6 @@ def _sqlite_auto_migrate() -> None:
 
     additions = {
         "videos": {
-            "duration": "FLOAT",
-            "width": "INTEGER",
-            "height": "INTEGER",
-            "fps": "FLOAT",
-            "aspect_ratio": "VARCHAR(50)",
-            "error_message": "TEXT",
             "source_type": "VARCHAR(20) DEFAULT 'upload'",
             "source_url": "TEXT",
             "youtube_video_id": "VARCHAR(20)",
@@ -93,10 +87,6 @@ def _sqlite_auto_migrate() -> None:
             "structure_json": "TEXT DEFAULT '[]'",
             "success_patterns_json": "TEXT DEFAULT '[]'",
             "creator_tips_json": "TEXT DEFAULT '[]'",
-            "analysis_summary": "TEXT DEFAULT ''",
-            "engagement_factors_json": "TEXT DEFAULT '[]'",
-            "structure_detail_json": "TEXT DEFAULT '{}'",
-            "analysis_provider": "VARCHAR(20) DEFAULT 'rule'",
         },
     }
     with engine.connect() as conn:
