@@ -36,14 +36,29 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Shorts Study Helper API", version="0.1.0", lifespan=lifespan)
 
-# CORS: 환경변수로 개발/운영 분리 (.env의 CORS_ORIGINS)
+# ---------------------------------------------------------------------------
+# CORS (라우터 등록보다 먼저 적용)
+# ---------------------------------------------------------------------------
+# CORS_ORIGINS 환경변수를 comma split해서 읽고, 비어 있으면 ["*"]를 기본값으로 사용.
+origins = settings.CORS_ORIGINS
+if isinstance(origins, str):
+    origins = [o.strip() for o in origins.split(",") if o.strip()]
+if not origins:
+    origins = ["*"]
+
+# allow_origins=["*"] 와 allow_credentials=True 는 브라우저가 거부한다(충돌).
+# 쿠키/인증을 쓰지 않으므로 credentials=False 로 두고 와일드카드를 허용한다.
+allow_credentials = origins != ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origin_list,
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "DELETE"],
+    allow_origins=origins,
+    allow_credentials=allow_credentials,
+    allow_methods=["*"],
     allow_headers=["*"],
 )
+
+logger.info("CORS allow_origins=%s credentials=%s", origins, allow_credentials)
 
 app.include_router(videos_router)
 app.include_router(youtube_router)

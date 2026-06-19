@@ -74,7 +74,9 @@ class Settings(BaseSettings):
 
     @property
     def cors_origin_list(self) -> list[str]:
-        return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]
+        origins = [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]
+        # 비어 있으면 모든 출처 허용 (운영에서 CORS_ORIGINS 미설정 대비)
+        return origins or ["*"]
 
 
 @lru_cache
