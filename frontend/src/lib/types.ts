@@ -1,5 +1,4 @@
-// 백엔드 app/schemas.py 와 1:1로 맞춘 타입
-
+﻿// 諛깆뿏??app/schemas.py ? 1:1濡?留욎텣 ???
 export type VideoStatus = "uploaded" | "analyzing" | "completed" | "failed";
 
 export interface UploadResponse {
@@ -32,7 +31,7 @@ export interface StructureStage {
 export interface Summary {
   topic: string;
   purpose: string;
-  difficulty: string; // 쉬움 / 보통 / 어려움
+  difficulty: string; // ?ъ? / 蹂댄넻 / ?대젮?
   category: string;
   confidence: number; // 0~1
   confidence_reason: string;
@@ -44,7 +43,7 @@ export interface Summary {
   recommended_audience: string[];
   try_points: string[];
   caution_points: string[];
-  // 숏폼 성공 구조 분석 (교육용)
+  // ?륂뤌 ?깃났 援ъ“ 遺꾩꽍 (援먯쑁??
   hook_type: string;
   hook_reason: string;
   hook_strength: number; // 0~100
@@ -88,4 +87,23 @@ export interface VideoDetail {
   error_message: string | null;
   summary: Summary | null;
   segments: Segment[];
+}
+
+export interface StructurePart {
+  content?: string;
+  purpose?: string;
+  title?: string;
+  description?: string;
+}
+
+export interface StructureDetail {
+  opening?: StructurePart;
+  development?: StructurePart;
+  climax?: StructurePart;
+  ending?: StructurePart;
+}
+
+
+export interface Summary {
+  analysis_summary?: string;
 }

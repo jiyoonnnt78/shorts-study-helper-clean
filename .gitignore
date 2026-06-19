@@ -1,0 +1,19 @@
+﻿# Python
+backend/.venv/
+backend/__pycache__/
+*.pyc
+
+# Database
+backend/data/*.db
+
+# Uploads
+backend/media/
+
+# Node
+frontend/node_modules/
+frontend/.next/
+
+# Environment
+.env
+.env.local
+*.env
