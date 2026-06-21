@@ -78,20 +78,21 @@ async def upload_video(
 
 
 def _get_video_or_404(db: Session, video_id: str) -> Video:
-    # video_id는 항상 우리가 만든 32자리 hex라서 그대로 조회해도 안전하지만,
-    # 형식 검증을 한 번 더 해서 이상한 입력을 빠르게 거른다.
-    if not video_id.isalnum() or len(video_id) > 64:
-        logger.warning("status 조회: 잘못된 video_id 형식 video_id=%r", video_id)
-        raise HTTPException(status_code=404, detail="영상을 찾을 수 없어요.")
-    video = db.get(Video, video_id)
+    # 앞뒤 공백/개행이 섞여 들어오는 경우를 방어 (URL 인코딩, 복붙 등)
+    vid = (video_id or "").strip()
+
+    # source_type(upload/youtube)과 무관하게 Video.id == vid 로 통일 조회.
+    video = db.query(Video).filter(Video.id == vid).first()
     if video is None:
-        # 진단: 어떤 id를 못 찾았는지, 현재 DB에 몇 개의 영상이 있는지 로그로 남긴다.
+        # 진단: 실제 DB에 어떤 id들이 있는지 로그로 남긴다 (최대 20개).
         try:
+            ids = [row[0] for row in db.query(Video.id).limit(20).all()]
             total = db.query(Video.id).count()
         except Exception:
-            total = -1
+            ids, total = [], -1
         logger.warning(
-            "status 조회 실패(404): video_id=%s (현재 videos row 수=%s)", video_id, total
+            "status 조회 실패(404): 요청 video_id=%r (len=%d) | DB row 수=%s | DB ids=%s",
+            vid, len(vid), total, ids,
         )
         raise HTTPException(status_code=404, detail="영상을 찾을 수 없어요.")
     return video

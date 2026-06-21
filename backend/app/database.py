@@ -24,6 +24,22 @@ connect_args = {"check_same_thread": False} if settings.DATABASE_URL.startswith(
 
 engine = create_engine(settings.DATABASE_URL, connect_args=connect_args, pool_pre_ping=True)
 
+# SQLite: 여러 워커/요청이 같은 파일을 볼 때, 한 요청에서 커밋한 row를
+# 다른 요청이 즉시 읽도록 WAL 모드 + 짧은 busy timeout을 설정한다.
+# (멀티워커 환경에서 "방금 만든 row가 다른 요청에서 404" 문제를 줄인다.)
+if settings.DATABASE_URL.startswith("sqlite"):
+    from sqlalchemy import event
+
+    @event.listens_for(engine, "connect")
+    def _sqlite_pragmas(dbapi_conn, _record):  # noqa: ANN001
+        cur = dbapi_conn.cursor()
+        try:
+            cur.execute("PRAGMA journal_mode=WAL")
+            cur.execute("PRAGMA synchronous=NORMAL")
+            cur.execute("PRAGMA busy_timeout=5000")
+        finally:
+            cur.close()
+
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
 
 
