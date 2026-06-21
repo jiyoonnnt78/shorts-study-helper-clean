@@ -107,3 +107,17 @@ export interface StructureDetail {
 export interface Summary {
   analysis_summary?: string;
 }
+
+export interface StructurePart {
+  content?: string;
+  purpose?: string;
+  title?: string;
+  description?: string;
+}
+
+export interface StructureDetail {
+  opening?: StructurePart;
+  development?: StructurePart;
+  climax?: StructurePart;
+  ending?: StructurePart;
+}

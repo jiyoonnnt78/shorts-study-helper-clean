@@ -68,6 +68,7 @@ def analyze_youtube(
         )
 
     # 3) DB 레코드 생성 (영상 파일은 없음 -> 메타데이터 전용 분석)
+    #    분석 시작 전에 row를 먼저 생성/커밋하고, 그 id로만 분석을 돌린다.
     video = Video(
         original_filename=f"youtube:{video_id}"[:255],
         stored_filename=None,
@@ -84,8 +85,16 @@ def analyze_youtube(
     db.add(video)
     db.commit()
     db.refresh(video)
+    new_id = video.id
 
-    # 4) 분석 시작 (배경)
-    background_tasks.add_task(run_analysis, video.id)
+    # 커밋 직후 같은 세션에서 재조회해 영속됐는지 확인 (배포 환경 진단용 로그)
+    check = db.get(Video, new_id)
+    logger.info(
+        "YouTube 분석 row 생성: id=%s status=%s persisted=%s",
+        new_id, video.status, check is not None,
+    )
 
-    return UploadResponse(id=video.id, status=video.status)
+    # 4) 분석 시작 (배경) — 반드시 방금 만든 id를 넘긴다.
+    background_tasks.add_task(run_analysis, new_id)
+
+    return UploadResponse(id=new_id, status=VideoStatus.UPLOADED)
