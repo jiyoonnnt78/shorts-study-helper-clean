@@ -666,6 +666,9 @@ class RuleBasedExplainer(ExplainerAdapter):
             has_large_text=view.has_large_text,
             first_question=first_question,
             confidence=confidence,
+            title=video.youtube_title or "",
+            description=video.youtube_description or "",
+            hashtags=video.youtube_hashtags or "",
         )
         sa = analyze_success_structure(s_inp)
         logger.info("explain[9] 성공구조 분석 완료: video=%s", vid)

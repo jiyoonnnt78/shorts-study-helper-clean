@@ -32,9 +32,9 @@ export default function StructureDetailCard({
         <span className="text-2xl" aria-hidden>
           🧩
         </span>
-        <h2 className="font-display text-xl text-ink">구성 분석</h2>
+        <h2 className="font-display text-xl text-ink">영상 구조 분석</h2>
         <span className="ml-auto text-xs text-ink/40">
-          단계별로 왜 이렇게 만들었을까요?
+          오프닝 → 전개 → 클라이맥스 → 마무리
         </span>
       </div>
 
@@ -58,7 +58,9 @@ export default function StructureDetailCard({
               </div>
 
               <div className="flex-1 pb-1">
-                <p className="font-display text-base text-ink">{st.label}</p>
+                <p className="font-display text-base text-ink">
+                  {i + 1}. {st.label}
+                </p>
                 <p className="mt-0.5 text-sm text-ink/75">{d.content}</p>
                 {d.purpose?.trim() && (
                   <p className="mt-1.5 rounded-2xl bg-black/[0.03] px-3 py-1.5 text-xs text-ink/55">
@@ -70,6 +72,12 @@ export default function StructureDetailCard({
           );
         })}
       </ol>
+
+      <p className="mt-4 rounded-2xl bg-blueberry-soft px-4 py-3 text-sm text-blueberry">
+        <span aria-hidden>🎯</span> 이 영상을 따라 만들려면 위 순서대로 — 오프닝으로
+        시선을 끌고, 전개로 내용을 풀고, 클라이맥스에서 핵심을 보여준 뒤,
+        마무리로 정리하세요.
+      </p>
     </section>
   );
 }

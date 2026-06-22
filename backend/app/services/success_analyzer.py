@@ -44,6 +44,10 @@ class StructureInput:
     has_large_text: bool = False
     first_question: bool = False   # 도입부에 질문/궁금증 신호
     confidence: float = 0.0
+    # 메타데이터 (YouTube 링크 분석 등 segment가 없을 때 구조 추정에 사용)
+    title: str = ""
+    description: str = ""
+    hashtags: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -63,7 +67,10 @@ def analyze_hook(inp: StructureInput) -> tuple[str, str, int]:
     first_feats = inp.seg_features[0] if inp.seg_features else []
     first_text = inp.seg_has_text[0] if inp.seg_has_text else False
     first_speech = inp.seg_has_speech[0] if inp.seg_has_speech else False
-    kw_blob = " ".join(inp.keywords)
+    # 키워드 + 제목 + 설명 + 해시태그를 모두 신호로 사용 (metadata-only에서 특히 중요)
+    kw_blob = " ".join(inp.keywords) + " " + inp.title + " " + inp.description + " " + inp.hashtags
+    has_meta = bool((inp.title or inp.description or "").strip())
+    metadata_only = inp.segment_count == 0
 
     strength = 35  # 기본값
     hook_type = "정보 제시형"
@@ -103,11 +110,17 @@ def analyze_hook(inp: StructureInput) -> tuple[str, str, int]:
         reason = "감정을 자극하는 장면으로 시작해서 마음을 움직여요."
         strength += 10
 
-    # 도입부에 아무 단서도 없으면 약한 훅
-    if not first_text and not first_speech:
+    # 도입부에 단서가 없을 때:
+    # - segment가 있는데도 글자/말이 없으면 '잔잔한 시작형'
+    # - metadata-only(segment 0개)면 제목/설명으로 위에서 판정한 유형을 유지
+    if not metadata_only and not first_text and not first_speech:
         hook_type = "잔잔한 시작형"
         reason = "처음에 글자나 말이 적어서 무슨 내용인지 천천히 드러나요."
         strength = min(strength, 40)
+    elif metadata_only and has_meta:
+        # 제목 기반 추정이므로 약간 보수적으로 강도 조정
+        reason = "제목·설명으로 보아 " + reason
+        strength = min(strength, 70)
 
     strength = max(10, min(95, strength))
     return hook_type, reason, strength
@@ -215,11 +228,47 @@ def analyze_success_patterns(inp: StructureInput, hook_strength: int) -> list[st
 # ---------------------------------------------------------------------------
 # 4) 제작 팁 (학생이 자기 영상 만들 때)
 # ---------------------------------------------------------------------------
+_INTENT_WORDS = {"설명", "방법", "후기", "소개", "추천", "정보", "영상", "공유", "리뷰"}
+# 주제어로 부적절한 흔한 일반명사 (관계/대상 지칭 등)
+_WEAK_TOPIC = {"남자", "여자", "사람", "친구", "우리", "오늘", "하루", "요즘", "진짜", "완전"}
+
+
 def _topic_word(inp: StructureInput) -> str:
-    """대표 주제어 1개 (없으면 빈 문자열). 팁 문장에 끼워 구체화한다."""
+    """대표 주제어 1개 (없으면 빈 문자열). 해시태그>키워드>제목 순, 약한 단어는 후순위."""
+    import re as _re
+
+    def ok(k: str) -> bool:
+        if not k or len(k) < 2:
+            return False
+        if k in _INTENT_WORDS:
+            return False
+        if _re.search(r"\d", k) or k.lower().startswith("top"):
+            return False
+        return True
+
+    # 1) 해시태그가 가장 명확한 주제 신호 (#패션 #스타일 등)
+    tags = [t for t in _re.findall(r"[가-힣A-Za-z]{2,}", inp.hashtags or "") if ok(t)]
+    for t in tags:
+        if t not in _WEAK_TOPIC:
+            return t
+
+    # 2) 키워드 중 약하지 않은 것
     for k in inp.keywords:
-        # 의도 표현(설명/후기 등)이 아닌 진짜 주제 명사 우선
-        if k and len(k) >= 2:
+        if ok(k) and k not in _WEAK_TOPIC:
+            return k
+
+    # 3) 제목의 명사 후보 중 약하지 않은 것
+    if inp.title:
+        title_nouns = [t for t in _re.findall(r"[가-힣]{2,}", inp.title) if ok(t)]
+        for t in title_nouns:
+            if t not in _WEAK_TOPIC:
+                return t
+        if title_nouns:
+            return title_nouns[0]
+
+    # 4) 그래도 없으면 키워드/태그 아무거나
+    for k in list(inp.keywords) + tags:
+        if ok(k):
             return k
     return ""
 
@@ -395,11 +444,12 @@ def analyze_success_structure(inp: StructureInput) -> SuccessAnalysis:
 # ---------------------------------------------------------------------------
 def build_structure_detail(inp: "StructureInput", hook_type: str) -> dict:
     """
-    규칙 신호로 opening/development/climax/ending 각 {content, purpose}를 만든다.
+    opening/development/climax/ending 각 {content, purpose}를 만든다.
+    segment가 있으면 그 흐름을, 없으면(YouTube 링크) 제목·설명·주제어로 추정한다.
     LLM 없이도 LLM 출력과 같은 형태를 제공해 프론트가 일관되게 렌더링하도록.
     """
-    subj = _subject_phrase(inp)
     topic = _topic_word(inp) or "핵심 소재"
+    title = (inp.title or "").strip()
     n = inp.segment_count
 
     opening_purpose = {
@@ -412,24 +462,51 @@ def build_structure_detail(inp: "StructureInput", hook_type: str) -> dict:
         "잔잔한 시작형": "천천히 분위기를 잡으며 시작해요",
     }.get(hook_type, "첫 장면으로 시선을 끌어요")
 
+    # 제목을 활용한 도입부 추정 (metadata-only에서 특히 유용)
+    if title:
+        opening_content = (
+            f"\"{title}\"라는 주제를 던지며 시작할 거예요. "
+            f"제목에서 약속한 내용을 첫 화면에 바로 보여주면 좋아요."
+        )
+    else:
+        opening_content = f"{topic}을(를) 소개하며 영상이 시작돼요."
+
+    # 훅 유형별 도입부 구체화
+    hook_open = {
+        "궁금증 유발형": f"\"{topic}, 진짜일까?\" 같은 질문을 자막으로 먼저 띄워요.",
+        "결과 먼저 보여주기형": f"{topic}의 완성된 결과나 결론을 0~2초에 먼저 보여줘요.",
+        "리스트·순위형": f"\"{topic} TOP3\"처럼 개수를 예고하며 시작해요.",
+        "재미·반전형": "예상 밖의 장면이나 웃긴 포인트로 시선을 확 끌어요.",
+        "공감·감정형": "보는 사람이 '내 얘기 같다' 느낄 상황으로 시작해요.",
+        "정보 제시형": f"{topic}의 가장 놀라운 사실 하나를 먼저 던져요.",
+    }.get(hook_type)
+    if hook_open:
+        opening_content = hook_open
+
     detail = {
         "opening": {
-            "content": f"{subj}을(를) 소개하며 영상이 시작돼요.",
+            "content": opening_content,
             "purpose": opening_purpose,
         },
         "development": {
-            "content": f"{topic}에 대한 내용을 차례대로 보여줘요."
-            if n >= 2 else "내용을 이어서 보여줘요.",
+            "content": (
+                f"{topic}에 대한 핵심 내용을 2~3개 포인트로 빠르게 보여줘요. "
+                f"각 포인트를 짧은 컷으로 끊어 자막과 함께 전달하면 좋아요."
+            ),
             "purpose": "필요한 정보를 단계적으로 풀어 계속 보게 해요",
         },
         "climax": {
-            "content": f"{topic}에서 가장 중요한 장면이나 정보가 나와요.",
+            "content": (
+                f"{topic}에서 가장 인상적인 장면이나 핵심 메시지를 보여줘요. "
+                f"여기서 '이게 하이라이트'라는 느낌을 강조해요."
+            ),
             "purpose": "이 영상에서 가장 전하고 싶은 부분이에요",
         },
         "ending": {
-            "content": "내용을 정리하거나 마무리 장면으로 끝나요."
-            if n >= 2 else "짧게 마무리돼요.",
-            "purpose": "끝까지 본 보람과 인상을 남겨요",
+            "content": (
+                "핵심을 한 문장으로 정리하고, '저장'이나 '다음 영상'을 유도하며 끝내요."
+            ),
+            "purpose": "끝까지 본 보람과 다음 행동을 남겨요",
         },
     }
     return detail
