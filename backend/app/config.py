@@ -45,6 +45,11 @@ class Settings(BaseSettings):
     # 꺼져 있으면 제목/설명/썸네일 등 메타데이터 기반 사전 분석만 수행한다.
     ENABLE_YOUTUBE_DOWNLOAD: bool = False
 
+    # --- RapidAPI (YouTube Video FAST Downloader 24/7) 연동 테스트용 ---
+    # 키는 환경변수 RAPIDAPI_KEY로 주입 (코드/깃에 넣지 않음).
+    RAPIDAPI_KEY: str = ""
+    RAPIDAPI_HOST: str = "youtube-video-fast-downloader-24-7.p.rapidapi.com"
+
     # --- LLM 분석 (선택) ---
     # true이고 API 키가 있으면 LLM으로 더 풍부한 분석을 시도한다.
     # 키가 없거나 호출 실패 시 자동으로 규칙 기반 분석으로 fallback.

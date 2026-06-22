@@ -14,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .api.videos import router as videos_router
 from .api.youtube import router as youtube_router
+from .api.test_downloader import router as test_downloader_router
 from .config import get_settings
 from .database import create_all_tables
 
@@ -69,6 +70,7 @@ logger.info("CORS allow_origins=%s allow_origin_regex=%s", origins, origin_regex
 
 app.include_router(videos_router)
 app.include_router(youtube_router)
+app.include_router(test_downloader_router)
 
 # 캡쳐 이미지 서빙: /media/frames/{video_id}/segment_001.jpg
 # 업로드 원본 영상(videos/)은 공개하지 않고 frames만 공개한다.
