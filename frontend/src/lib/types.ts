@@ -1,4 +1,5 @@
-﻿// 諛깆뿏??app/schemas.py ? 1:1濡?留욎텣 ???
+// 백엔드 app/schemas.py 와 1:1로 맞춘 타입
+
 export type VideoStatus = "uploaded" | "analyzing" | "completed" | "failed";
 
 export interface UploadResponse {
@@ -31,7 +32,7 @@ export interface StructureStage {
 export interface Summary {
   topic: string;
   purpose: string;
-  difficulty: string; // ?ъ? / 蹂댄넻 / ?대젮?
+  difficulty: string; // 쉬움 / 보통 / 어려움
   category: string;
   confidence: number; // 0~1
   confidence_reason: string;
@@ -43,13 +44,43 @@ export interface Summary {
   recommended_audience: string[];
   try_points: string[];
   caution_points: string[];
-  // ?륂뤌 ?깃났 援ъ“ 遺꾩꽍 (援먯쑁??
+  // 숏폼 성공 구조 분석 (교육용)
   hook_type: string;
   hook_reason: string;
   hook_strength: number; // 0~100
   structure: StructureStage[];
   success_patterns: string[];
   creator_tips: string[];
+  // 더 풍부한 분석 (LLM provider; 규칙 기반은 비어 있을 수 있음)
+  analysis_summary?: string;
+  engagement_factors?: string[];
+  structure_detail?: StructureDetail | null;
+  analysis_provider?: string;
+  stage_samples?: StageSample[];
+}
+
+export interface StageSample {
+  key: string;
+  label: string;
+  at_sec: number;
+  screenshot: string | null;
+  observation: string;
+  role: string;
+  keep_watching: string;
+  tip: string;
+  example: string;
+}
+
+export interface StructureStageDetail {
+  content: string;
+  purpose: string;
+}
+
+export interface StructureDetail {
+  opening: StructureStageDetail;
+  development: StructureStageDetail;
+  climax: StructureStageDetail;
+  ending: StructureStageDetail;
 }
 
 export interface Segment {
@@ -87,49 +118,4 @@ export interface VideoDetail {
   error_message: string | null;
   summary: Summary | null;
   segments: Segment[];
-}
-
-export interface StructurePart {
-  content?: string;
-  purpose?: string;
-  title?: string;
-  description?: string;
-}
-
-export interface StructureDetail {
-  opening?: StructurePart;
-  development?: StructurePart;
-  climax?: StructurePart;
-  ending?: StructurePart;
-}
-
-
-export interface Summary {
-  analysis_summary?: string;
-}
-
-export interface StructurePart {
-  content?: string;
-  purpose?: string;
-  title?: string;
-  description?: string;
-}
-
-export interface StructureDetail {
-  opening?: StructurePart;
-  development?: StructurePart;
-  climax?: StructurePart;
-  ending?: StructurePart;
-}
-
-declare module "@/lib/types" {
-  interface Summary {
-    structure_detail?: StructureDetail;
-  }
-}
-
-declare module "@/lib/types" {
-  interface Summary {
-    engagement_factors?: string[];
-  }
 }

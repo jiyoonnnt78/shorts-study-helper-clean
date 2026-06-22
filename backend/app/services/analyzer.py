@@ -60,7 +60,14 @@ def run_analysis(video_id: str) -> None:
 
         # YouTube 링크인데 영상 파일이 없으면(다운로드 비활성) -> 메타데이터 전용 분석
         if not video.file_path:
-            _run_metadata_only(db, video, storage)
+            if (
+                video.source_type == "youtube"
+                and settings.ENABLE_YOUTUBE_DOWNLOAD
+                and video.youtube_video_id
+            ):
+                _run_youtube_sampling(db, video, storage)
+            else:
+                _run_metadata_only(db, video, storage)
             return
 
         # ---------- 1. 영상 기본 정보 ----------
@@ -156,18 +163,138 @@ def _run_metadata_only(db, video: Video, storage) -> None:
     사전 분석을 수행한다. segment가 없으므로 OCR/STT는 건너뛰고,
     explainer가 메타데이터를 주 신호로 사용한다 (source_weights.metadata 우선).
     """
+    vid = video.id
+    logger.info("video=%s 메타데이터 전용 분석 시작", vid)
     _set_step(db, video, STEP_META)
+
     from .explainer import get_explainer
 
     # segment 없이 explainer 호출 -> 메타데이터 기반 요약/성공구조 생성
     explainer = get_explainer()
+    logger.info("video=%s explainer.explain 호출 직전", vid)
     explainer.explain(db, video, segments=[])
+    logger.info("video=%s explainer.explain 반환", vid)
 
     video.status = VideoStatus.COMPLETED
     video.current_step = None
     video.error_message = None
     db.commit()
-    logger.info("video=%s YouTube 메타데이터 분석 완료", video.id)
+    logger.info("video=%s YouTube 메타데이터 분석 완료(status=completed 저장)", vid)
+
+
+STEP_DOWNLOAD = "영상을 받아오는 중"
+STEP_SAMPLING = "핵심 장면을 살펴보는 중"
+
+
+def _run_youtube_sampling(db, video: Video, storage) -> None:
+    """
+    YouTube 영상을 저화질로 받아 핵심 4구간만 샘플링 분석한다.
+    - STT/whisper 미사용 (OCR + 제목/설명).
+    - 30초 데드라인: 넘으면 그때까지 얻은 정보로 completed.
+    무한 로딩이 절대 없도록 모든 단계에 데드라인을 건다.
+    """
+    import time as _time
+
+    vid = video.id
+    deadline = _time.monotonic() + 30.0  # 30초 데드라인
+    logger.info("video=%s YouTube 샘플링 분석 시작(deadline 30s)", vid)
+
+    from pathlib import Path
+    from .youtube_download import download_video
+    from .sampling_analyzer import sample_segments, fill_stage_narratives
+    from .video_probe import probe_video
+
+    file_path = None
+    samples = []
+    try:
+        # 1) 다운로드 (실패하거나 시간 초과면 메타데이터 전용으로 폴백)
+        _set_step(db, video, STEP_DOWNLOAD)
+        dl_dir = Path(get_settings().MEDIA_ROOT) / "videos"
+        file_path = download_video(
+            video.youtube_video_id, dl_dir, timeout=15
+        )
+        if not file_path or _time.monotonic() > deadline:
+            logger.info("video=%s 다운로드 실패/시간초과 -> 메타데이터 전용 폴백", vid)
+            _run_metadata_only(db, video, storage)
+            return
+
+        video.file_path = file_path
+        video.stored_filename = Path(file_path).name
+        db.commit()
+
+        # 2) 영상 정보 (길이)
+        try:
+            info = probe_video(file_path)
+            video.duration = getattr(info, "duration", 0.0) or 0.0
+            video.width = getattr(info, "width", None)
+            video.height = getattr(info, "height", None)
+            db.commit()
+        except Exception:
+            logger.warning("probe 실패(무시): %s", vid, exc_info=True)
+
+        # 3) 4구간 샘플링 OCR (데드라인 적용)
+        _set_step(db, video, STEP_SAMPLING)
+        frame_dir = Path(get_settings().MEDIA_ROOT) / "frames" / vid
+        samples = sample_segments(
+            file_path, video.duration or 0.0, frame_dir, deadline
+        )
+
+        # 4) OCR 키워드 + 제목 + 설명 통합 -> explainer로 요약/구조/팁 생성
+        ocr_blob = " ".join(
+            t for s in samples for t in s.ocr_texts
+        )
+        _run_metadata_with_ocr(db, video, ocr_blob)
+
+        # 5) 구간별 서술 채우기 (훅 유형/주제 활용)
+        summary = video.summary
+        hook_type = summary.hook_type if summary else ""
+        topic = (summary.detected_keywords[0] if summary and summary.detected_keywords else "")
+        fill_stage_narratives(samples, hook_type, topic)
+
+        # 6) 샘플 저장 (스크린샷은 노출용 상대경로로)
+        summary_samples = []
+        for s in samples:
+            summary_samples.append({
+                "key": s.key,
+                "label": s.label,
+                "at_sec": s.at_sec,
+                "screenshot": f"/api/videos/{vid}/frames/{s.screenshot_name}" if s.screenshot_name else None,
+                "observation": s.observation(),
+                "role": s.role,
+                "keep_watching": s.keep_watching,
+                "tip": s.tip,
+                "example": s.example,
+            })
+        video.summary.stage_samples = summary_samples
+        video.status = VideoStatus.COMPLETED
+        video.current_step = None
+        video.error_message = None
+        db.commit()
+        logger.info("video=%s YouTube 샘플링 분석 완료(구간 %d개)", vid, len(samples))
+
+    except Exception:
+        logger.warning("video=%s 샘플링 분석 실패 -> 메타데이터 전용 폴백", vid, exc_info=True)
+        try:
+            _run_metadata_only(db, video, storage)
+        except Exception:
+            _mark_failed(db, vid, "분석 중 문제가 생겼어요. 잠시 후 다시 시도해 주세요.")
+
+
+def _run_metadata_with_ocr(db, video: Video, ocr_blob: str) -> None:
+    """
+    OCR로 얻은 화면 글자를 메타데이터에 보태서 explainer를 돌린다.
+    segment는 없지만 ocr_blob을 임시 메타데이터로 합쳐 키워드 품질을 높인다.
+    """
+    from .explainer import get_explainer
+
+    # 제목+설명+해시태그+OCR을 합친 텍스트를 youtube_description에 임시 보강
+    # (explainer가 metadata_text로 사용 -> 키워드에 OCR 반영)
+    if ocr_blob.strip():
+        base = video.youtube_description or ""
+        video.youtube_description = (base + " " + ocr_blob).strip()
+        db.commit()
+
+    get_explainer().explain(db, video, segments=[])
 
 
 def _mark_failed(db, video_id: str, message: str) -> None:

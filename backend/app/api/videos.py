@@ -21,6 +21,7 @@ from ..schemas import (
     StatusResponse,
     StructureStageOut,
     StructureDetailOut,
+    StageSampleOut,
     SummaryOut,
     UploadResponse,
     VideoDetailResponse,
@@ -142,6 +143,9 @@ def get_video(video_id: str, db: Session = Depends(get_db)):
                     else None
                 ),
                 analysis_provider=video.summary.analysis_provider,
+                stage_samples=[
+                    StageSampleOut(**s) for s in video.summary.stage_samples
+                ],
             )
         segments = [
             SegmentOut(
@@ -188,6 +192,8 @@ def get_video(video_id: str, db: Session = Depends(get_db)):
 
 @router.get("/{video_id}/status", response_model=StatusResponse)
 def get_video_status(video_id: str, db: Session = Depends(get_db)):
+    import os
+    logger.info("status 조회 요청: video_id=%s (worker pid=%s)", video_id, os.getpid())
     video = _get_video_or_404(db, video_id)
     return StatusResponse(
         id=video.id,
@@ -195,6 +201,20 @@ def get_video_status(video_id: str, db: Session = Depends(get_db)):
         current_step=video.current_step,
         error_message=video.error_message,
     )
+
+
+@router.get("/{video_id}/frames/{name}")
+def get_frame(video_id: str, name: str):
+    """4구간 샘플링 스크린샷 서빙 (안전한 파일명만 허용)."""
+    from fastapi.responses import FileResponse
+
+    # 경로 조작 방지: 단순 파일명만 허용
+    if "/" in name or "\\" in name or ".." in name:
+        raise HTTPException(status_code=404, detail="이미지를 찾을 수 없어요.")
+    frame_path = get_settings().media_root_path / "frames" / video_id / name
+    if not frame_path.exists():
+        raise HTTPException(status_code=404, detail="이미지를 찾을 수 없어요.")
+    return FileResponse(str(frame_path), media_type="image/jpeg")
 
 
 @router.delete("/{video_id}", response_model=DeleteResponse)

@@ -136,6 +136,7 @@ class VideoSummary(Base):
     engagement_factors_json: Mapped[str] = mapped_column(Text, default="[]")  # 몰입 요소
     structure_detail_json: Mapped[str] = mapped_column(Text, default="{}")    # opening/development/climax/ending {content,purpose}
     analysis_provider: Mapped[str] = mapped_column(String(20), default="rule")  # rule / llm
+    stage_samples_json: Mapped[str] = mapped_column(Text, default="[]")  # 4구간 샘플(스크린샷+OCR+서술)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
@@ -248,3 +249,11 @@ class VideoSummary(Base):
     @structure_detail.setter
     def structure_detail(self, v: dict) -> None:
         self.structure_detail_json = json.dumps(v, ensure_ascii=False)
+
+    @property
+    def stage_samples(self) -> list:
+        return self._get(self.stage_samples_json)
+
+    @stage_samples.setter
+    def stage_samples(self, v: list) -> None:
+        self.stage_samples_json = json.dumps(v, ensure_ascii=False)

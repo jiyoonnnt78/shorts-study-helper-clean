@@ -68,8 +68,13 @@ def analyze_youtube(
         )
 
     # 3) DB 레코드 생성 (영상 파일은 없음 -> 메타데이터 전용 분석)
-    #    분석 시작 전에 row를 먼저 생성/커밋하고, 그 id로만 분석을 돌린다.
+    #    id를 여기서 명시적으로 만들어, 저장/응답/분석에 동일 값을 쓴다.
+    #    (SQLAlchemy default 생성에 의존하지 않아 id 흐름이 100% 투명)
+    import uuid as _uuid_mod
+
+    new_id = _uuid_mod.uuid4().hex  # 32자리 hex
     video = Video(
+        id=new_id,
         original_filename=f"youtube:{video_id}"[:255],
         stored_filename=None,
         file_path=None,
@@ -85,16 +90,19 @@ def analyze_youtube(
     db.add(video)
     db.commit()
     db.refresh(video)
-    new_id = video.id
 
-    # 커밋 직후 같은 세션에서 재조회해 영속됐는지 확인 (배포 환경 진단용 로그)
-    check = db.get(Video, new_id)
+    # 저장된 id가 우리가 만든 id와 같은지 확인 (다르면 심각한 버그)
+    persisted = db.get(Video, new_id)
+    persisted_id = persisted.id if persisted else None
+    import os
+    from ..config import get_settings as _gs
     logger.info(
-        "YouTube 분석 row 생성: id=%s status=%s persisted=%s",
-        new_id, video.status, check is not None,
+        "YouTube 분석: 생성 id=%s | DB 저장 id=%s | 일치=%s | worker pid=%s | db=%s",
+        new_id, persisted_id, persisted_id == new_id, os.getpid(), _gs().DATABASE_URL,
     )
 
     # 4) 분석 시작 (배경) — 반드시 방금 만든 id를 넘긴다.
     background_tasks.add_task(run_analysis, new_id)
 
+    # 5) 응답 id == videos.id (요구사항 3)
     return UploadResponse(id=new_id, status=VideoStatus.UPLOADED)

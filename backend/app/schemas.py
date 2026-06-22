@@ -73,6 +73,18 @@ class StructureDetailOut(BaseModel):
     ending: StructureStageDetailOut = StructureStageDetailOut()
 
 
+class StageSampleOut(BaseModel):
+    key: str = ""
+    label: str = ""
+    at_sec: float = 0.0
+    screenshot: str | None = None
+    observation: str = ""
+    role: str = ""
+    keep_watching: str = ""
+    tip: str = ""
+    example: str = ""
+
+
 class SummaryOut(BaseModel):
     topic: str
     purpose: str
@@ -100,6 +112,7 @@ class SummaryOut(BaseModel):
     engagement_factors: list[str] = []
     structure_detail: StructureDetailOut | None = None
     analysis_provider: str = "rule"
+    stage_samples: list[StageSampleOut] = []
 
 
 class VideoDetailResponse(BaseModel):

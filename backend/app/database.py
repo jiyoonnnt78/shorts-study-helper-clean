@@ -113,6 +113,7 @@ def _sqlite_auto_migrate() -> None:
             "engagement_factors_json": "TEXT DEFAULT '[]'",
             "structure_detail_json": "TEXT DEFAULT '{}'",
             "analysis_provider": "VARCHAR(20) DEFAULT 'rule'",
+            "stage_samples_json": "TEXT DEFAULT '[]'",
         },
     }
     with engine.connect() as conn:

@@ -6,6 +6,7 @@ import BrandHeader from "@/components/BrandHeader";
 import HookCard from "@/components/HookCard";
 import StructureCard from "@/components/StructureCard";
 import StructureDetailCard from "@/components/StructureDetailCard";
+import StageSamplesCard from "@/components/StageSamplesCard";
 import { InsightListCard } from "@/components/InsightListCard";
 import SummaryCard from "@/components/SummaryCard";
 import SceneCard from "@/components/SceneCard";
@@ -157,8 +158,13 @@ export default function ResultPage() {
           <StructureDetailCard detail={s.structure_detail} />
         )}
 
+        {/* 2-3. 핵심 장면 4곳 분석 (스크린샷+OCR+팁) */}
+        {s.stage_samples && s.stage_samples.length > 0 && (
+          <StageSamplesCard samples={s.stage_samples} />
+        )}
+
         {/* 배포 확인용 표식 (이 줄이 보이면 최신 프론트가 배포된 것) */}
-        <p className="text-center text-[10px] text-ink/20">structure-v2</p>
+        <p className="text-center text-[10px] text-ink/20">structure-v3</p>
 
         {/* 3. 몰입 요소 */}
         {s.engagement_factors && s.engagement_factors.length > 0 && (
