@@ -544,12 +544,15 @@ def _build_metadata_text(video) -> str:
 class RuleBasedExplainer(ExplainerAdapter):
     def explain(self, db: Session, video: Video, segments: list[Segment]) -> None:
         total = len(segments)
+        vid = video.id
+        logger.info("explain 시작: video=%s segment=%d", vid, total)
 
         # 1) 구간별 문장 먼저
         for i, seg in enumerate(segments):
             seg.title = segment_title(i, total, seg)
             seg.description = segment_description(i, total, seg)
             seg.learn_point = segment_learn_point(i, total, seg)
+        logger.info("explain[1] 구간 문장 생성 완료: video=%s", vid)
 
         # 2) 전체 문서 (모든 segment의 글자/말/제목/설명)
         doc = ta.build_document(
@@ -558,6 +561,7 @@ class RuleBasedExplainer(ExplainerAdapter):
             titles=[s.title or "" for s in segments],
             descriptions=[s.description or "" for s in segments],
         )
+        logger.info("explain[2] 문서 빌드 완료: video=%s", vid)
 
         # 3) 메타데이터 텍스트 합치기 (제목+설명+해시태그+파일명)
         #    영상 내부 정보를 우선하므로 메타데이터는 보조로만 쓴다.
@@ -565,6 +569,7 @@ class RuleBasedExplainer(ExplainerAdapter):
 
         # 4) 출처 신뢰도 + 가사 감지 (OCR/STT/metadata 3계층)
         sw = ta.compute_source_weights(doc.ocr_text, doc.stt_text, metadata_text)
+        logger.info("explain[4] 출처 가중치 계산 완료: video=%s", vid)
 
         # 5) 핵심 개념: segment 단위 신호 + 메타데이터(보조)로 핵심 명사 선별
         lyrics = sw.lyrics.is_likely_lyrics
@@ -573,10 +578,20 @@ class RuleBasedExplainer(ExplainerAdapter):
             for s in segments
         ]
         signal_src = doc.ocr_text if lyrics else doc.content_text
+        # 메타데이터 전용(segment 없음)이면 메모리 절약을 위해 Kiwi를 건너뛸 수 있다.
+        _settings = get_settings()
+        if total == 0:
+            use_kiwi = _settings.ENABLE_KIWI and _settings.KIWI_FOR_METADATA_ONLY
+        else:
+            use_kiwi = _settings.ENABLE_KIWI
+        logger.info("explain[5] 핵심 명사 추출 시작(use_kiwi=%s, segment=%d): video=%s",
+                    use_kiwi, total, vid)
         concepts = ta.extract_concepts(
-            seg_pairs, signal_src, use_kiwi=get_settings().ENABLE_KIWI,
+            seg_pairs, signal_src, use_kiwi=use_kiwi,
             metadata_text=metadata_text, meta_weight=sw.metadata,
         )
+        logger.info("explain[5] 핵심 명사 추출 완료(%d개): video=%s",
+                    len(concepts.nouns), vid)
 
         # 6) 의도 분류 + 확신도
         intent = classify_intent(doc, concepts)
@@ -587,6 +602,8 @@ class RuleBasedExplainer(ExplainerAdapter):
             key_noun_count=len(concepts.nouns),
             metadata_used=sw.metadata_used, metadata_weight=sw.metadata,
         )
+        logger.info("explain[6] 의도/확신도 완료(category=%s conf=%.2f): video=%s",
+                    intent.category, confidence, vid)
 
         category_out = intent.category if confidence >= CONF_MID else CATEGORY_OTHER
 
@@ -651,6 +668,7 @@ class RuleBasedExplainer(ExplainerAdapter):
             confidence=confidence,
         )
         sa = analyze_success_structure(s_inp)
+        logger.info("explain[9] 성공구조 분석 완료: video=%s", vid)
 
         # provider adapter: 기본 규칙 기반, 옵션으로 LLM이 보강/대체.
         from .success_analyzer import to_analysis_result
@@ -674,6 +692,8 @@ class RuleBasedExplainer(ExplainerAdapter):
         except Exception:
             logger.exception("분석 provider 실패 -> 규칙 결과 사용")
             result = rule_result
+        logger.info("explain[10] 분석 provider 완료(provider=%s): video=%s",
+                    result.provider, vid)
 
         summary.hook_type = result.hook_type or sa.hook_type
         summary.hook_reason = result.hook_reason or sa.hook_reason
