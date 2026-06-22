@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import BrandHeader from "@/components/BrandHeader";
 import HookCard from "@/components/HookCard";
 import StructureCard from "@/components/StructureCard";
+import StructureDetailCard from "@/components/StructureDetailCard";
 import { InsightListCard } from "@/components/InsightListCard";
 import SummaryCard from "@/components/SummaryCard";
 import SceneCard from "@/components/SceneCard";
@@ -148,10 +149,29 @@ export default function ResultPage() {
         {/* 1. 훅 분석 (최상단) */}
         <HookCard summary={s} />
 
-        {/* 2. 영상 구조 */}
+        {/* 2. 영상 구조 (타임라인) */}
         <StructureCard structure={s.structure} />
 
-        {/* 3. 성공 법칙 */}
+        {/* 2-2. 구성 분석 (오프닝/전개/클라이맥스/마무리 content+purpose) */}
+        {s.structure_detail && (
+          <StructureDetailCard detail={s.structure_detail} />
+        )}
+
+        {/* 배포 확인용 표식 (이 줄이 보이면 최신 프론트가 배포된 것) */}
+        <p className="text-center text-[10px] text-ink/20">structure-v2</p>
+
+        {/* 3. 몰입 요소 */}
+        {s.engagement_factors && s.engagement_factors.length > 0 && (
+          <InsightListCard
+            emoji="🧲"
+            title="몰입 요소"
+            subtitle="끝까지 보게 만드는 힘"
+            items={s.engagement_factors}
+            accent="mint"
+          />
+        )}
+
+        {/* 4. 성공 법칙 */}
         <InsightListCard
           emoji="⭐"
           title="성공 법칙"
@@ -160,7 +180,7 @@ export default function ResultPage() {
           accent="sunshine"
         />
 
-        {/* 4. 제작 팁 */}
+        {/* 5. 제작 팁 */}
         <InsightListCard
           emoji="📝"
           title="제작 팁"
