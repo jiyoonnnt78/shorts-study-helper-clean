@@ -20,3 +20,4 @@ faster-whisper>=1.0
 # ENABLE_KIWI=true일 때 명사 추출 정확도를 높인다.
 # 설치/실행 실패 시 자동으로 규칙 기반 추출로 fallback하므로 필수는 아니다.
 kiwipiepy>=0.17
+psycopg2-binary
