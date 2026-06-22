@@ -20,4 +20,12 @@ faster-whisper>=1.0
 # ENABLE_KIWI=true일 때 명사 추출 정확도를 높인다.
 # 설치/실행 실패 시 자동으로 규칙 기반 추출로 fallback하므로 필수는 아니다.
 kiwipiepy>=0.17
-psycopg2-binary
+
+# --- YouTube 링크 분석 (선택) ---
+# 메타데이터는 yt-dlp 없이도 oEmbed로 동작한다.
+# ENABLE_YOUTUBE_DOWNLOAD=true로 풍부한 메타데이터를 쓰려면 설치:
+yt-dlp>=2024.0.0
+
+# --- PostgreSQL (운영) ---
+# DATABASE_URL이 postgresql:// 이면 필요. SQLite만 쓰면 불필요.
+psycopg2-binary>=2.9

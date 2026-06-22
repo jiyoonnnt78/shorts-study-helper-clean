@@ -298,6 +298,11 @@ def _run_metadata_with_ocr(db, video: Video, ocr_blob: str) -> None:
 
 
 def _mark_failed(db, video_id: str, message: str) -> None:
+    # DB 오류로 트랜잭션이 깨진 상태일 수 있으므로 먼저 rollback해서 세션을 복구한다.
+    try:
+        db.rollback()
+    except Exception:
+        logger.warning("rollback 실패(무시)", exc_info=True)
     try:
         video = db.get(Video, video_id)
         if video is not None:
@@ -305,5 +310,10 @@ def _mark_failed(db, video_id: str, message: str) -> None:
             video.current_step = None
             video.error_message = message
             db.commit()
+            logger.info("video=%s status=failed 저장: %s", video_id, message)
     except Exception:
         logger.exception("failed 상태 저장 중 오류")
+        try:
+            db.rollback()
+        except Exception:
+            pass
