@@ -121,3 +121,15 @@ export interface StructureDetail {
   climax?: StructurePart;
   ending?: StructurePart;
 }
+
+declare module "@/lib/types" {
+  interface Summary {
+    structure_detail?: StructureDetail;
+  }
+}
+
+declare module "@/lib/types" {
+  interface Summary {
+    engagement_factors?: string[];
+  }
+}
