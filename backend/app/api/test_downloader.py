@@ -21,21 +21,22 @@ router = APIRouter(prefix="/api/test", tags=["test"])
 
 class DownloaderRequest(BaseModel):
     url: str
+    quality: str = "247"
 
 
 @router.get("/downloader")
-def test_downloader_get(url: str):
-    """브라우저에서 ?url=... 로 바로 테스트."""
-    logger.info("테스트 요청(GET): url=%s", url)
-    result = call_downloader(url)
+def test_downloader_get(url: str, quality: str = "247"):
+    """브라우저에서 ?url=...&quality=... 로 바로 테스트."""
+    logger.info("테스트 요청(GET): url=%s quality=%s", url, quality)
+    result = call_downloader(url, quality=quality)
     return result
 
 
 @router.post("/downloader")
 def test_downloader_post(body: DownloaderRequest):
     """JSON 바디로 테스트."""
-    logger.info("테스트 요청(POST): url=%s", body.url)
-    result = call_downloader(body.url)
+    logger.info("테스트 요청(POST): url=%s quality=%s", body.url, body.quality)
+    result = call_downloader(body.url, quality=body.quality)
     return result
 
 

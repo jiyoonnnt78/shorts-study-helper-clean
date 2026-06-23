@@ -5,11 +5,9 @@ RapidAPI "YouTube Video FAST Downloader 24/7" 연동 테스트.
 - 기존 분석 로직(OCR/STT/Kiwi/explainer/yt-dlp)과 완전히 독립.
 - 키는 환경변수 RAPIDAPI_KEY로만 주입 (코드/깃에 키를 넣지 않음).
 
-이 다운로더류 API는 보통 다음 중 하나의 패턴을 쓴다:
-  (A) video_id를 받아 포맷 목록/다운로드 URL을 한 번에 반환
-  (B) 1단계: 영상 정보 조회 -> 2단계: 특정 포맷 다운로드 URL 획득
-서비스마다 경로가 달라서, 후보 엔드포인트를 순서대로 시도하고
-"처음으로 성공(2xx)한 응답"을 그대로 반환한다. 실제 응답을 보고 다음 단계를 확정한다.
+RapidAPI Playground Code Snippet 기준 (추측 아님):
+  GET /download_video/{video_id}?quality={quality}
+  headers: x-rapidapi-key, x-rapidapi-host, Content-Type: application/json
 """
 from __future__ import annotations
 
@@ -36,23 +34,14 @@ def extract_video_id(url: str) -> str | None:
     return m.group(1) if m else None
 
 
-def _headers() -> dict:
-    s = get_settings()
-    return {
-        "x-rapidapi-key": s.RAPIDAPI_KEY,
-        "x-rapidapi-host": s.RAPIDAPI_HOST,
-    }
-
-
-def call_downloader(url: str, timeout: float = 30.0) -> dict:
+def call_downloader(url: str, quality: str = "247", timeout: float = 60.0) -> dict:
     """
-    여러 후보 엔드포인트를 순서대로 시도한다.
-    각 시도의 상태코드와 응답을 로그로 남기고,
-    처음 2xx 성공한 응답을 raw로 반환. 모두 실패하면 시도 내역을 반환.
+    RapidAPI Playground의 실제 명세 그대로 호출한다 (추측 없음).
 
-    반환 형태:
-      성공: {"success": True, "endpoint": "...", "status": 200, "raw_response": {...}}
-      실패: {"success": False, "attempts": [ {endpoint,status,error/body}, ... ]}
+      GET /download_video/{video_id}?quality={quality}
+      headers: x-rapidapi-key, x-rapidapi-host, Content-Type: application/json
+
+    응답 JSON(또는 텍스트)을 그대로 raw_response로 반환한다.
     """
     s = get_settings()
     if not s.RAPIDAPI_KEY:
@@ -65,74 +54,50 @@ def call_downloader(url: str, timeout: float = 30.0) -> dict:
         return {"success": False, "error": "유효한 YouTube URL이 아니에요.", "input_url": url}
 
     host = s.RAPIDAPI_HOST
-    base = f"https://{host}"
+    path = f"/download_video/{vid}?quality={quality}"
+    full_url = f"https://{host}{path}"
 
-    # 이 API에서 흔히 쓰는 후보 경로들 (GET 위주). 실제 동작하는 것만 성공 처리됨.
-    # {vid}는 video_id로 치환.
-    candidate_paths = [
-        f"/get_video_info/{vid}",
-        f"/get_available_quality/{vid}",
-        f"/get_video_quality/{vid}",
-        f"/download_video/{vid}",
-        f"/video/{vid}",
-        f"/get_video/{vid}",
-        f"/info/{vid}",
-    ]
-
-    logger.info("RapidAPI 요청 시작: host=%s video_id=%s (후보 %d개)",
-                host, vid, len(candidate_paths))
-
-    attempts: list[dict] = []
-    with httpx.Client(timeout=timeout, headers=_headers()) as client:
-        for path in candidate_paths:
-            full = base + path
-            try:
-                logger.info("→ 시도: GET %s", path)
-                r = client.get(full)
-                status = r.status_code
-                logger.info("← 응답: %s (%s)", status, path)
-
-                # 본문 파싱 시도 (JSON 우선, 아니면 텍스트 앞부분)
-                try:
-                    body = r.json()
-                    is_json = True
-                except Exception:
-                    body = r.text[:1000]
-                    is_json = False
-
-                if 200 <= status < 300:
-                    logger.info("✅ 성공 엔드포인트: %s | json=%s | 응답=%s",
-                                path, is_json, _short(body))
-                    return {
-                        "success": True,
-                        "endpoint": path,
-                        "status": status,
-                        "is_json": is_json,
-                        "raw_response": body,
-                    }
-
-                # 실패는 기록만 하고 다음 후보로
-                logger.info("✗ 비성공(%s): %s | 응답=%s", status, path, _short(body))
-                attempts.append({"endpoint": path, "status": status, "body": _short(body)})
-
-            except httpx.HTTPError as e:
-                logger.warning("✗ 요청 오류: %s | %s", path, e)
-                attempts.append({"endpoint": path, "error": str(e)})
-
-    logger.error("모든 후보 엔드포인트 실패 (video_id=%s)", vid)
-    return {
-        "success": False,
-        "video_id": vid,
-        "message": "성공한 엔드포인트가 없어요. attempts의 status/body로 올바른 경로를 확인하세요.",
-        "attempts": attempts,
+    headers = {
+        "x-rapidapi-key": s.RAPIDAPI_KEY,
+        "x-rapidapi-host": host,
+        "Content-Type": "application/json",
     }
 
+    logger.info("RapidAPI 호출 시작: GET %s (video_id=%s quality=%s)",
+                full_url, vid, quality)
 
-def _short(v) -> str:
-    """로그/응답용 짧은 문자열."""
     try:
-        import json
-        s = v if isinstance(v, str) else json.dumps(v, ensure_ascii=False)
-    except Exception:
-        s = str(v)
-    return s[:400]
+        with httpx.Client(timeout=timeout, headers=headers) as client:
+            r = client.get(full_url)
+        status = r.status_code
+        text = r.text
+        logger.info("RapidAPI 응답: status=%s", status)
+        logger.info("RapidAPI 응답 본문(앞 1000자): %s", text[:1000])
+
+        # JSON 우선 파싱, 실패하면 텍스트 그대로
+        try:
+            body = r.json()
+            is_json = True
+        except Exception:
+            body = text
+            is_json = False
+
+        success = 200 <= status < 300
+        if not success:
+            logger.error("RapidAPI 비성공: status=%s url=%s", status, full_url)
+
+        return {
+            "success": success,
+            "request_url": full_url,
+            "status": status,
+            "is_json": is_json,
+            "raw_response": body,
+        }
+
+    except httpx.HTTPError as e:
+        logger.error("RapidAPI 요청 오류: %s | url=%s", e, full_url, exc_info=True)
+        return {
+            "success": False,
+            "request_url": full_url,
+            "error": str(e),
+        }
