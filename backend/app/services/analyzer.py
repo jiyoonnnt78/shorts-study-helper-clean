@@ -241,13 +241,36 @@ def _run_youtube_sampling(db, video: Video, storage) -> None:
         video.stored_filename = Path(file_path).name
         db.commit()
 
-        # 2) 영상 정보 (길이)
+        # 다운로드 완료 + mp4 기본 검증 (파일 존재/크기)
+        try:
+            _fsize = Path(file_path).stat().st_size
+        except Exception:
+            _fsize = 0
+        logger.info("video=%s 다운로드 완료: %s (%.2f MB)",
+                    vid, Path(file_path).name, _fsize / 1e6)
+        if _fsize < 1024:
+            logger.warning("video=%s 다운로드 파일이 너무 작음(%d bytes) -> 손상 의심, 폴백",
+                           vid, _fsize)
+            _run_metadata_only(db, video, storage)
+            return
+
+        # 2) 영상 정보 (길이) — 실제 영상인지 ffprobe로 검증
         try:
             info = probe_video(file_path)
             video.duration = getattr(info, "duration", 0.0) or 0.0
             video.width = getattr(info, "width", None)
             video.height = getattr(info, "height", None)
             db.commit()
+            # mp4 검증 로그: duration/해상도가 정상이면 실제 영상으로 확인
+            if video.duration and video.duration > 0:
+                logger.info(
+                    "video=%s mp4 검증 OK: duration=%.1fs %sx%s (실제 영상 확인)",
+                    vid, video.duration, video.width, video.height,
+                )
+            else:
+                logger.warning(
+                    "video=%s mp4 검증 경고: duration=0 (영상이 아닐 수 있음)", vid
+                )
         except Exception:
             logger.warning("probe 실패(무시): %s", vid, exc_info=True)
 
