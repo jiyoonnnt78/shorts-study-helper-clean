@@ -366,20 +366,33 @@ def _map_vision_to_summary(db, video: Video, r: dict, frames: list[dict]) -> Non
                 }
         summary.structure_detail = detail
 
-    # 핵심 장면 -> stage_samples 형태로 (프론트 "핵심 장면" 카드 재사용)
-    key_scenes = _l("key_scenes")
+    # 장면 -> stage_samples 매핑 (Vision이 장면별 observation/role/purpose 직접 생성)
+    scenes = r.get("scenes")
+    key_scenes = _l("key_scenes")  # 구버전 폴백
     samples = []
-    n = len(frames)
     for i, fr in enumerate(frames):
-        scene_text = key_scenes[i] if i < len(key_scenes) else ""
+        observation = ""
+        role = ""
+        purpose = ""
+        # 우선: Vision의 구조화된 scenes 배열
+        if isinstance(scenes, list) and i < len(scenes) and isinstance(scenes[i], dict):
+            sc = scenes[i]
+            observation = str(sc.get("observation", "") or "")
+            role = str(sc.get("role", "") or "")
+            purpose = str(sc.get("purpose", "") or "")
+        # 폴백: 옛 key_scenes(문자열 배열)
+        if not observation and i < len(key_scenes):
+            observation = key_scenes[i]
+
         samples.append({
             "key": f"scene_{i}",
             "label": f"{int(fr.get('ratio', 0) * 100)}% 지점",
             "at_sec": fr.get("at_sec", 0),
             "screenshot": f"/api/videos/{video.id}/frames/{fr['name']}",
-            "observation": scene_text,
-            "role": "",
-            "keep_watching": "",
+            "observation": observation,
+            "role": role,
+            "purpose": purpose,
+            "keep_watching": purpose,  # 프론트 호환(역할/효과 표시)
             "tip": "",
             "example": "",
         })
