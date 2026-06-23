@@ -52,3 +52,38 @@ def ping():
             "https://www.youtube.com/watch?v=jNQXAC9IVRw"
         ),
     }
+
+
+class DownloadRequest(BaseModel):
+    url: str
+    quality: str = "247"
+
+
+@router.post("/download")
+def test_real_download(body: DownloadRequest):
+    """
+    RapidAPI -> mp4 실제 다운로드 -> 로컬 저장까지 검증.
+    주의: 파일 준비에 최대 5분 걸릴 수 있어 응답이 오래 걸릴 수 있음.
+    """
+    import os
+    from ..services.rapidapi_download import download_via_rapidapi
+
+    logger.info("실제 다운로드 테스트 시작: url=%s quality=%s", body.url, body.quality)
+    path = download_via_rapidapi(body.url, quality=body.quality)
+    if not path:
+        return {"success": False, "message": "다운로드 실패 (로그 확인)"}
+
+    size = os.path.getsize(path) if os.path.exists(path) else 0
+    return {
+        "success": True,
+        "saved_path": path,
+        "file_exists": os.path.exists(path),
+        "size_bytes": size,
+        "size_mb": round(size / 1e6, 2),
+    }
+
+
+@router.get("/download")
+def test_real_download_get(url: str, quality: str = "247"):
+    """브라우저에서 바로 테스트 (GET)."""
+    return test_real_download(DownloadRequest(url=url, quality=quality))

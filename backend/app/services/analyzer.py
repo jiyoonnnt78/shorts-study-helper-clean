@@ -204,19 +204,38 @@ def _run_youtube_sampling(db, video: Video, storage) -> None:
     from .sampling_analyzer import sample_segments, fill_stage_narratives
     from .video_probe import probe_video
 
+    settings = get_settings()
     file_path = None
     samples = []
     try:
         # 1) 다운로드 (실패하거나 시간 초과면 메타데이터 전용으로 폴백)
         _set_step(db, video, STEP_DOWNLOAD)
-        dl_dir = Path(get_settings().MEDIA_ROOT) / "videos"
-        file_path = download_video(
-            video.youtube_video_id, dl_dir, timeout=15
-        )
-        if not file_path or _time.monotonic() > deadline:
-            logger.info("video=%s 다운로드 실패/시간초과 -> 메타데이터 전용 폴백", vid)
-            _run_metadata_only(db, video, storage)
-            return
+        dl_dir = Path(settings.MEDIA_ROOT) / "videos"
+
+        if getattr(settings, "USE_RAPIDAPI_DOWNLOAD", False) and settings.RAPIDAPI_KEY:
+            # RapidAPI 경로: file URL polling으로 최대 5분 걸릴 수 있음.
+            # 이 경우 30초 deadline은 무시하고 RapidAPI 자체 타임아웃(5분)을 따른다.
+            from .rapidapi_download import download_via_rapidapi
+            logger.info("video=%s RapidAPI 다운로드 사용", vid)
+            file_path = download_via_rapidapi(
+                video.source_url or "", quality=settings.RAPIDAPI_QUALITY,
+                video_id=video.youtube_video_id,
+            )
+            if not file_path:
+                logger.info("video=%s RapidAPI 다운로드 실패 -> 메타데이터 전용 폴백", vid)
+                _run_metadata_only(db, video, storage)
+                return
+            # RapidAPI는 시간이 오래 걸렸을 수 있으니 샘플링용 deadline을 새로 잡는다.
+            deadline = _time.monotonic() + 60.0
+        else:
+            # 기존 yt-dlp 경로 (봇 차단 가능)
+            file_path = download_video(
+                video.youtube_video_id, dl_dir, timeout=8
+            )
+            if not file_path or _time.monotonic() > deadline:
+                logger.info("video=%s 다운로드 실패/시간초과 -> 메타데이터 전용 폴백", vid)
+                _run_metadata_only(db, video, storage)
+                return
 
         video.file_path = file_path
         video.stored_filename = Path(file_path).name

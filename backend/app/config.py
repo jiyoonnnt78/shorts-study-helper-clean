@@ -49,6 +49,9 @@ class Settings(BaseSettings):
     # 키는 환경변수 RAPIDAPI_KEY로 주입 (코드/깃에 넣지 않음).
     RAPIDAPI_KEY: str = ""
     RAPIDAPI_HOST: str = "youtube-video-fast-downloader-24-7.p.rapidapi.com"
+    # analyzer가 yt-dlp 대신 RapidAPI로 영상을 받게 할지 (true면 RapidAPI 사용)
+    USE_RAPIDAPI_DOWNLOAD: bool = False
+    RAPIDAPI_QUALITY: str = "247"
 
     # --- LLM 분석 (선택) ---
     # true이고 API 키가 있으면 LLM으로 더 풍부한 분석을 시도한다.
