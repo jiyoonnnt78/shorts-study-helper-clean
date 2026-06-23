@@ -101,3 +101,56 @@ def call_downloader(url: str, quality: str = "247", timeout: float = 60.0) -> di
             "request_url": full_url,
             "error": str(e),
         }
+
+
+def get_available_quality(url: str, timeout: float = 60.0) -> dict:
+    """
+    영상에서 받을 수 있는 화질 목록을 조회한다 (추측 없음, 실제 명세).
+
+      GET /get_available_quality/{video_id}?response_mode=default
+
+    응답을 그대로 raw_response로 반환. 응답 구조를 보고 360p id를 확정한다.
+    """
+    s = get_settings()
+    if not s.RAPIDAPI_KEY:
+        logger.error("RAPIDAPI_KEY 미설정")
+        return {"success": False, "error": "RAPIDAPI_KEY 환경변수가 설정되지 않았어요."}
+
+    vid = extract_video_id(url)
+    if not vid:
+        logger.error("video_id 추출 실패: %r", url)
+        return {"success": False, "error": "유효한 YouTube URL이 아니에요.", "input_url": url}
+
+    host = s.RAPIDAPI_HOST
+    path = f"/get_available_quality/{vid}?response_mode=default"
+    full_url = f"https://{host}{path}"
+    headers = {
+        "x-rapidapi-key": s.RAPIDAPI_KEY,
+        "x-rapidapi-host": host,
+        "Content-Type": "application/json",
+    }
+
+    logger.info("화질 목록 조회 시작: GET %s (video_id=%s)", full_url, vid)
+    try:
+        with httpx.Client(timeout=timeout, headers=headers) as client:
+            r = client.get(full_url)
+        status = r.status_code
+        text = r.text
+        logger.info("화질 목록 응답: status=%s", status)
+        logger.info("화질 목록 본문(앞 1500자): %s", text[:1500])
+        try:
+            body = r.json()
+            is_json = True
+        except Exception:
+            body = text
+            is_json = False
+        return {
+            "success": 200 <= status < 300,
+            "request_url": full_url,
+            "status": status,
+            "is_json": is_json,
+            "raw_response": body,
+        }
+    except httpx.HTTPError as e:
+        logger.error("화질 목록 조회 오류: %s | url=%s", e, full_url, exc_info=True)
+        return {"success": False, "request_url": full_url, "error": str(e)}

@@ -1,4 +1,4 @@
-# --- Core (Part 1) ---
+# --- Core ---
 fastapi>=0.110
 uvicorn[standard]>=0.29
 sqlalchemy>=2.0
@@ -6,27 +6,22 @@ pydantic>=2.6
 pydantic-settings>=2.2
 python-multipart>=0.0.9
 
-# --- Video processing (Part 2) ---
-opencv-python-headless>=4.9
-scenedetect[opencv]>=0.6.3
-
-# --- OCR (Part 3, 무거움 - ENABLE_OCR=false면 설치 생략 가능) ---
-easyocr>=1.7
-
-# --- STT (Part 3 - ENABLE_STT=false면 설치 생략 가능) ---
-faster-whisper>=1.0
-
-# --- 한국어 형태소 분석 (선택) ---
-# ENABLE_KIWI=true일 때 명사 추출 정확도를 높인다.
-# 설치/실행 실패 시 자동으로 규칙 기반 추출로 fallback하므로 필수는 아니다.
-kiwipiepy>=0.17
-
-# --- YouTube 링크 분석 (선택) ---
-# 메타데이터는 yt-dlp 없이도 oEmbed로 동작한다.
-# ENABLE_YOUTUBE_DOWNLOAD=true로 풍부한 메타데이터를 쓰려면 설치:
-yt-dlp>=2024.0.0
+# --- HTTP (RapidAPI 다운로드 + OpenAI Vision 호출) ---
+httpx>=0.27
 
 # --- PostgreSQL (운영) ---
-# DATABASE_URL이 postgresql:// 이면 필요. SQLite만 쓰면 불필요.
 psycopg2-binary>=2.9
-httpx>=0.27
+
+# --- YouTube 메타데이터 폴백 (선택, 가벼움) ---
+# RapidAPI 실패 시 메타데이터 분석 폴백용. 빼도 oEmbed로 일부 동작.
+yt-dlp>=2024.0.0
+
+# =====================================================================
+# 아래는 OCR/STT 방식(ANALYSIS_MODE=ocr)에서만 필요. Vision 방식에선 불필요.
+# 배포 속도/용량을 위해 기본 제거. OCR 방식으로 되돌리려면 주석 해제.
+# =====================================================================
+# easyocr>=1.7                 # OCR (torch 포함, 매우 무거움)
+# faster-whisper>=1.0          # STT (무거움)
+# kiwipiepy>=0.17              # 한국어 형태소 (선택)
+# opencv-python-headless>=4.9  # scenedetect용 (Vision은 ffmpeg만 사용)
+# scenedetect[opencv]>=0.6.3   # 장면 경계 감지 (Vision 방식 불필요)
