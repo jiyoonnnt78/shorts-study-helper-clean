@@ -105,6 +105,8 @@ _SCHEMA_ADDITIONS: dict[str, dict[str, tuple[str, str | None]]] = {
         "hook_type": ("varchar(40)", ""),
         "hook_reason": ("text", ""),
         "hook_strength": ("int", "0"),
+        "hook_summary": ("text", ""),
+        "hook_improvement_tip": ("text", ""),
         "structure_json": ("json", "[]"),
         "success_patterns_json": ("json", "[]"),
         "creator_tips_json": ("json", "[]"),

@@ -15,7 +15,7 @@ const STAGE_EMOJI: Record<string, string> = {
 };
 
 /**
- * 🎞️ 핵심 장면 4곳 분석 — 오프닝/전개/클라이맥스/마무리 각 구간의
+ * 🎞️ 핵심 장면 분석 — 오프닝/전개/클라이맥스/마무리 각 구간의
  * 대표 스크린샷 + 화면 관찰(OCR) + 역할 + 따라 만들기 팁 + 예시 문장.
  */
 export default function StageSamplesCard({
@@ -32,7 +32,7 @@ export default function StageSamplesCard({
         <span className="text-2xl" aria-hidden>
           🎞️
         </span>
-        <h2 className="font-display text-xl text-ink">핵심 장면 4곳 분석</h2>
+        <h2 className="font-display text-xl text-ink">핵심 장면 분석</h2>
         <span className="ml-auto text-xs text-ink/40">
           대표 장면을 깊게 읽었어요
         </span>

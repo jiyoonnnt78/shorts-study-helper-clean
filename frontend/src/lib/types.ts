@@ -12,6 +12,8 @@ export interface StatusResponse {
   status: VideoStatus;
   current_step: string | null;
   error_message: string | null;
+  progress: number;
+  message: string;
 }
 
 export interface SourceWeights {
@@ -48,6 +50,8 @@ export interface Summary {
   hook_type: string;
   hook_reason: string;
   hook_strength: number; // 0~100
+  hook_summary: string;
+  hook_improvement_tip: string;
   structure: StructureStage[];
   success_patterns: string[];
   creator_tips: string[];

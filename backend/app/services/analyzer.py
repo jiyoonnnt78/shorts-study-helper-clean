@@ -345,6 +345,14 @@ def _map_vision_to_summary(db, video: Video, r: dict, frames: list[dict]) -> Non
     summary.analysis_summary = _s("analysis_summary") or _s("core_message")
     summary.hook_type = _s("hook_type")
     summary.hook_reason = _s("hook_reason")
+    summary.hook_summary = _s("hook_summary")
+    summary.hook_improvement_tip = _s("hook_improvement_tip")
+    # hook_strength: 0~100 정수로 보정
+    try:
+        hs = int(r.get("hook_strength", 0) or 0)
+    except Exception:
+        hs = 0
+    summary.hook_strength = max(0, min(100, hs))
     summary.recommended_audience = _l("audience")
     summary.engagement_factors = _l("persuasion")
     summary.success_patterns = _l("success_patterns")

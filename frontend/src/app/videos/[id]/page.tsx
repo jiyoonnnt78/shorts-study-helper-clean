@@ -9,10 +9,10 @@ import StructureDetailCard from "@/components/StructureDetailCard";
 import StageSamplesCard from "@/components/StageSamplesCard";
 import { InsightListCard } from "@/components/InsightListCard";
 import SummaryCard from "@/components/SummaryCard";
+import UploadSuggestCard from "@/components/UploadSuggestCard";
 import SceneCard from "@/components/SceneCard";
 import LowConfidenceBanner from "@/components/LowConfidenceBanner";
 import YoutubeInfoCard from "@/components/YoutubeInfoCard";
-import DevPanel from "@/components/DevPanel";
 import { getVideo, deleteVideo } from "@/lib/api";
 import type { VideoDetail } from "@/lib/types";
 
@@ -158,7 +158,7 @@ export default function ResultPage() {
           <StructureDetailCard detail={s.structure_detail} />
         )}
 
-        {/* 2-3. 핵심 장면 4곳 분석 (스크린샷+OCR+팁) */}
+        {/* 2-3. 핵심 장면 분석 (스크린샷+OCR+팁) */}
         {s.stage_samples && s.stage_samples.length > 0 && (
           <StageSamplesCard samples={s.stage_samples} />
         )}
@@ -198,6 +198,9 @@ export default function ResultPage() {
         {/* 5. 영상 요약 (보조) */}
         <SummaryCard summary={s} />
 
+        {/* YouTube 링크 분석이면: 더 정확한 분석을 위해 업로드 유도 */}
+        {data.source_type === "youtube" && <UploadSuggestCard />}
+
         {/* 6. 장면별 보기 */}
         {data.segments.length > 0 && (
           <section>
@@ -218,8 +221,7 @@ export default function ResultPage() {
           </section>
         )}
 
-        {/* 7. 개발자용 분석 (기본 숨김) */}
-        <DevPanel summary={s} />
+        {/* 개발자용 분석 패널은 숨김 (OCR/STT 미사용으로 불필요) */}
 
         {/* 액션 */}
         <div className="mt-2 flex flex-wrap items-center justify-center gap-3">

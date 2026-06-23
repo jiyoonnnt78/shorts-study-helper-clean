@@ -190,16 +190,44 @@ def get_video(video_id: str, db: Session = Depends(get_db)):
     )
 
 
+# 분석 단계 -> (진행률, 사용자용 문구) 매핑
+_STEP_PROGRESS: dict[str, tuple[int, str]] = {
+    "metadata": (10, "영상 정보 확인 중"),
+    "downloading": (30, "영상 다운로드 중"),
+    "download_completed": (40, "영상 다운로드 완료"),
+    "probing_video": (45, "영상 정보 확인 중"),
+    "extracting_frames": (55, "대표 장면 추출 중"),
+    "running_vision": (75, "AI가 장면을 살펴보는 중"),
+    "vision_analyzing": (75, "AI가 장면을 살펴보는 중"),
+    "running_ocr": (70, "화면 글자를 읽는 중"),
+    "generating_summary": (90, "분석 결과 정리 중"),
+}
+
+
+def _progress_for(status: str, step: str | None) -> tuple[int, str]:
+    if status == "completed":
+        return 100, "완료"
+    if status == "failed":
+        return 100, "분석을 마치지 못했어요"
+    if step and step in _STEP_PROGRESS:
+        return _STEP_PROGRESS[step]
+    # 분석 시작 직후 등 미지정 단계
+    return 5, "분석을 준비하는 중"
+
+
 @router.get("/{video_id}/status", response_model=StatusResponse)
 def get_video_status(video_id: str, db: Session = Depends(get_db)):
     import os
     logger.info("status 조회 요청: video_id=%s (worker pid=%s)", video_id, os.getpid())
     video = _get_video_or_404(db, video_id)
+    progress, message = _progress_for(video.status, video.current_step)
     return StatusResponse(
         id=video.id,
         status=video.status,
         current_step=video.current_step,
         error_message=video.error_message,
+        progress=progress,
+        message=message,
     )
 
 

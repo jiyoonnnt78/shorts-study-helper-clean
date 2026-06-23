@@ -29,6 +29,8 @@ class StatusResponse(BaseModel):
     status: str
     current_step: str | None = None
     error_message: str | None = None
+    progress: int = 0
+    message: str = ""
 
 
 class SegmentOut(BaseModel):
@@ -104,6 +106,8 @@ class SummaryOut(BaseModel):
     hook_type: str = ""
     hook_reason: str = ""
     hook_strength: int = 0
+    hook_summary: str = ""
+    hook_improvement_tip: str = ""
     structure: list[StructureStageOut] = []
     success_patterns: list[str] = []
     creator_tips: list[str] = []

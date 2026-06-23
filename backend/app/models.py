@@ -128,6 +128,8 @@ class VideoSummary(Base):
     hook_type: Mapped[str] = mapped_column(String(40), default="")            # 훅 유형
     hook_reason: Mapped[str] = mapped_column(Text, default="")                # 왜 효과적인가
     hook_strength: Mapped[int] = mapped_column(default=0)                     # 0~100
+    hook_summary: Mapped[str] = mapped_column(Text, default="")               # 초반에 어떻게 관심을 끄는지
+    hook_improvement_tip: Mapped[str] = mapped_column(Text, default="")       # 더 강한 훅으로 만드는 팁
     structure_json: Mapped[str] = mapped_column(Text, default="[]")           # 영상 구조 단계 배열(타임라인)
     success_patterns_json: Mapped[str] = mapped_column(Text, default="[]")    # 성공 법칙
     creator_tips_json: Mapped[str] = mapped_column(Text, default="[]")        # 제작 팁
