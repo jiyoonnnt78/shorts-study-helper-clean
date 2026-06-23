@@ -65,7 +65,11 @@ def run_analysis(video_id: str) -> None:
                 and settings.ENABLE_YOUTUBE_DOWNLOAD
                 and video.youtube_video_id
             ):
-                _run_youtube_sampling(db, video, storage)
+                # ANALYSIS_MODE=vision이면 프레임+OpenAI Vision (OCR/STT 없음)
+                if getattr(settings, "ANALYSIS_MODE", "vision") == "vision":
+                    _run_vision_analysis(db, video, storage)
+                else:
+                    _run_youtube_sampling(db, video, storage)
             else:
                 _run_metadata_only(db, video, storage)
             return
@@ -206,6 +210,181 @@ def _step(db, video: Video, step: str) -> None:
             db.rollback()
         except Exception:
             pass
+
+
+def _run_vision_analysis(db, video: Video, storage) -> None:
+    """
+    OpenAI Vision 기반 분석 (OCR/STT/Kiwi 미사용 -> Render OOM 회피).
+
+    흐름:
+      RapidAPI 다운로드 -> 대표 프레임 추출 -> 메타데이터 수집
+      -> OpenAI Vision 호출 -> 기존 summary 구조에 매핑 -> completed
+
+    timeout으로 중단하지 않음. 실패 시 메타데이터 전용 폴백.
+    """
+    vid = video.id
+    logger.info("video=%s Vision 분석 시작 (OCR/STT 미사용)", vid)
+
+    from pathlib import Path
+    from .youtube_download import download_video
+    from .frame_extractor import extract_representative_frames
+    from .vision_analyzer import analyze_with_vision
+    from .video_probe import probe_video
+
+    settings = get_settings()
+    try:
+        # 1) 다운로드
+        _step(db, video, ST_DOWNLOADING)
+        if getattr(settings, "USE_RAPIDAPI_DOWNLOAD", False) and settings.RAPIDAPI_KEY:
+            from .rapidapi_download import download_via_rapidapi
+            logger.info("video=%s RapidAPI 다운로드 사용", vid)
+            file_path = download_via_rapidapi(
+                video.source_url or "", quality=settings.RAPIDAPI_QUALITY,
+                video_id=video.youtube_video_id,
+            )
+        else:
+            dl_dir = Path(settings.MEDIA_ROOT) / "videos"
+            file_path = download_video(video.youtube_video_id, dl_dir, timeout=8)
+
+        if not file_path:
+            logger.info("video=%s 다운로드 실패 -> 메타데이터 전용 폴백", vid)
+            _run_metadata_only(db, video, storage)
+            return
+
+        video.file_path = file_path
+        video.stored_filename = Path(file_path).name
+        db.commit()
+        try:
+            _fsize = Path(file_path).stat().st_size
+        except Exception:
+            _fsize = 0
+        logger.info("video=%s 다운로드 완료: %s (%.2f MB)",
+                    vid, Path(file_path).name, _fsize / 1e6)
+        _step(db, video, ST_DOWNLOAD_DONE)
+
+        # 2) ffprobe (길이)
+        _step(db, video, ST_PROBING)
+        try:
+            info = probe_video(file_path)
+            video.duration = getattr(info, "duration", 0.0) or 0.0
+            video.width = getattr(info, "width", None)
+            video.height = getattr(info, "height", None)
+            db.commit()
+            logger.info("video=%s ffprobe 완료: duration=%.1fs", vid, video.duration or 0)
+        except Exception:
+            logger.warning("video=%s ffprobe 실패(무시)", vid, exc_info=True)
+
+        # 3) 대표 프레임 추출 (시간대별 N장)
+        _step(db, video, ST_EXTRACTING)
+        frame_count = getattr(settings, "FRAME_COUNT", 6) or 6
+        frame_dir = Path(settings.MEDIA_ROOT) / "frames" / vid
+        frames = extract_representative_frames(
+            file_path, video.duration or 0.0, frame_dir,
+            count=frame_count, max_width=getattr(settings, "FRAME_MAX_WIDTH", 512),
+        )
+        logger.info("video=%s 프레임 %d장 추출 완료", vid, len(frames))
+        if not frames:
+            logger.warning("video=%s 프레임 0장 -> 메타데이터 전용 폴백", vid)
+            _run_metadata_only(db, video, storage)
+            return
+
+        # 4) OpenAI Vision 분석
+        _step(db, video, "running_vision")
+        meta = {
+            "title": video.youtube_title or "",
+            "description": video.youtube_description or "",
+            "channel": getattr(video, "youtube_channel", "") or "",
+            "duration": int(video.duration or 0),
+            "hashtags": video.youtube_hashtags or "",
+        }
+        result = analyze_with_vision(frames, meta)
+        if not result:
+            logger.warning("video=%s Vision 실패 -> 메타데이터 전용 폴백", vid)
+            _run_metadata_only(db, video, storage)
+            return
+
+        # 5) 결과를 기존 summary 구조에 매핑
+        _step(db, video, ST_SUMMARY)
+        _map_vision_to_summary(db, video, result, frames)
+
+        video.status = VideoStatus.COMPLETED
+        video.current_step = None
+        video.error_message = None
+        db.commit()
+        logger.info("video=%s Vision 분석 완료(completed)", vid)
+
+    except Exception:
+        logger.warning("video=%s Vision 분석 실패 -> 폴백", vid, exc_info=True)
+        try:
+            _run_metadata_only(db, video, storage)
+        except Exception:
+            _mark_failed(db, vid, "분석 중 문제가 생겼어요. 잠시 후 다시 시도해 주세요.")
+
+
+def _map_vision_to_summary(db, video: Video, r: dict, frames: list[dict]) -> None:
+    """Vision 결과(dict)를 VideoSummary 필드에 매핑 (프론트 스키마 유지)."""
+    summary = video.summary
+    if summary is None:
+        # summary가 없으면 만든다 (explainer의 생성 방식과 동일하게)
+        from ..models import VideoSummary
+        summary = VideoSummary(video_id=video.id)
+        db.add(summary)
+        db.flush()
+
+    def _s(key, default=""):
+        v = r.get(key)
+        return v if isinstance(v, str) else default
+
+    def _l(key):
+        v = r.get(key)
+        return [str(x) for x in v] if isinstance(v, list) else []
+
+    summary.topic = _s("topic") or "영상 분석 결과"
+    summary.purpose = _s("purpose")
+    summary.category = _s("category", "기타") or "기타"
+    summary.analysis_summary = _s("analysis_summary") or _s("core_message")
+    summary.hook_type = _s("hook_type")
+    summary.hook_reason = _s("hook_reason")
+    summary.recommended_audience = _l("audience")
+    summary.engagement_factors = _l("persuasion")
+    summary.success_patterns = _l("success_patterns")
+    summary.creator_tips = _l("creator_tips")
+    summary.confidence = 0.8  # Vision은 실제 화면을 봤으므로 비교적 높게
+    summary.primary_source = "vision"
+    summary.analysis_provider = "openai_vision"
+
+    # 구조(structure) 매핑
+    st = r.get("structure") or {}
+    if isinstance(st, dict):
+        detail = {}
+        for k in ("opening", "development", "climax", "ending"):
+            seg = st.get(k) or {}
+            if isinstance(seg, dict):
+                detail[k] = {
+                    "content": str(seg.get("content", "")),
+                    "purpose": str(seg.get("purpose", "")),
+                }
+        summary.structure_detail = detail
+
+    # 핵심 장면 -> stage_samples 형태로 (프론트 "핵심 장면" 카드 재사용)
+    key_scenes = _l("key_scenes")
+    samples = []
+    n = len(frames)
+    for i, fr in enumerate(frames):
+        scene_text = key_scenes[i] if i < len(key_scenes) else ""
+        samples.append({
+            "key": f"scene_{i}",
+            "label": f"{int(fr.get('ratio', 0) * 100)}% 지점",
+            "at_sec": fr.get("at_sec", 0),
+            "screenshot": f"/api/videos/{video.id}/frames/{fr['name']}",
+            "observation": scene_text,
+            "role": "",
+            "keep_watching": "",
+            "tip": "",
+            "example": "",
+        })
+    summary.stage_samples = samples
+    db.commit()
 
 
 def _run_youtube_sampling(db, video: Video, storage) -> None:

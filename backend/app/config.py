@@ -53,6 +53,14 @@ class Settings(BaseSettings):
     # analyzer가 yt-dlp 대신 RapidAPI로 영상을 받게 할지 (true면 RapidAPI 사용)
     USE_RAPIDAPI_DOWNLOAD: bool = False
     RAPIDAPI_QUALITY: str = "247"
+    # --- 분석 모드 ---
+    # "vision": OpenAI Vision (OCR/STT 미사용, 권장). "ocr": 기존 easyocr 방식.
+    ANALYSIS_MODE: str = "vision"
+    # --- OpenAI Vision ---
+    OPENAI_API_KEY: str = ""
+    OPENAI_VISION_MODEL: str = "gpt-4o-mini"   # 저렴+빠름. 더 정밀하려면 gpt-4o
+    FRAME_COUNT: int = 6                         # 추출 프레임 수 (6~8)
+    FRAME_MAX_WIDTH: int = 512                   # 프레임 가로 px (Vision 비용 절감)
     # --- 샘플링 분석 메모리/길이 제어 (Render Free OOM 방지) ---
     SAMPLING_MAX_FRAMES: int = 4       # OCR할 프레임 수 (4~6)
     SAMPLING_MAX_DURATION: int = 0     # 이 초과 영상은 프레임 축소 (0=제한없음)
