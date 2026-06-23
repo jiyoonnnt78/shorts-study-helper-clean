@@ -9,7 +9,6 @@ import StructureDetailCard from "@/components/StructureDetailCard";
 import StageSamplesCard from "@/components/StageSamplesCard";
 import { InsightListCard } from "@/components/InsightListCard";
 import SummaryCard from "@/components/SummaryCard";
-import UploadSuggestCard from "@/components/UploadSuggestCard";
 import SceneCard from "@/components/SceneCard";
 import LowConfidenceBanner from "@/components/LowConfidenceBanner";
 import YoutubeInfoCard from "@/components/YoutubeInfoCard";
@@ -197,9 +196,6 @@ export default function ResultPage() {
 
         {/* 5. 영상 요약 (보조) */}
         <SummaryCard summary={s} />
-
-        {/* YouTube 링크 분석이면: 더 정확한 분석을 위해 업로드 유도 */}
-        {data.source_type === "youtube" && <UploadSuggestCard />}
 
         {/* 6. 장면별 보기 */}
         {data.segments.length > 0 && (
