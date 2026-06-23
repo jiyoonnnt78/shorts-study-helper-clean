@@ -185,19 +185,42 @@ def _run_metadata_only(db, video: Video, storage) -> None:
 STEP_DOWNLOAD = "영상을 받아오는 중"
 STEP_SAMPLING = "핵심 장면을 살펴보는 중"
 
+# 요청한 세분화 status (status API가 그대로 반환)
+ST_DOWNLOADING = "downloading"
+ST_DOWNLOAD_DONE = "download_completed"
+ST_PROBING = "probing_video"
+ST_EXTRACTING = "extracting_frames"
+ST_OCR = "running_ocr"
+ST_SUMMARY = "generating_summary"
+
+
+def _step(db, video: Video, step: str) -> None:
+    """current_step만 저장+commit (status는 analyzing 유지). 재시작 복구용."""
+    try:
+        video.current_step = step
+        db.commit()
+        logger.info("video=%s step=%s", video.id, step)
+    except Exception:
+        logger.warning("step 저장 실패: %s", step, exc_info=True)
+        try:
+            db.rollback()
+        except Exception:
+            pass
+
 
 def _run_youtube_sampling(db, video: Video, storage) -> None:
     """
-    YouTube 영상을 저화질로 받아 핵심 4구간만 샘플링 분석한다.
-    - STT/whisper 미사용 (OCR + 제목/설명).
-    - 30초 데드라인: 넘으면 그때까지 얻은 정보로 completed.
-    무한 로딩이 절대 없도록 모든 단계에 데드라인을 건다.
-    """
-    import time as _time
+    YouTube 영상을 받아 핵심 구간 샘플링 분석한다.
 
+    설계 (대회 시연용, OOM 방지 우선):
+    - timeout으로 중단하지 않음. 시간이 걸려도 끝까지 진행해 completed를 보장.
+    - 각 단계마다 current_step을 DB에 저장 (재시작/조회 대비).
+    - OCR은 메모리 안전 모드(프레임 먼저, reader 1회, gc). STT는 사용 안 함.
+    - 긴 영상은 프레임 수/해상도로만 제어 (분석 자체는 끝까지).
+    - 어떤 단계가 실패해도 메타데이터 전용으로 폴백하거나 failed 저장.
+    """
     vid = video.id
-    deadline = _time.monotonic() + 30.0  # 30초 데드라인
-    logger.info("video=%s YouTube 샘플링 분석 시작(deadline 30s)", vid)
+    logger.info("video=%s YouTube 샘플링 분석 시작 (timeout 없음, 끝까지 진행)", vid)
 
     from pathlib import Path
     from .youtube_download import download_video
@@ -208,86 +231,96 @@ def _run_youtube_sampling(db, video: Video, storage) -> None:
     file_path = None
     samples = []
     try:
-        # 1) 다운로드 (실패하거나 시간 초과면 메타데이터 전용으로 폴백)
-        _set_step(db, video, STEP_DOWNLOAD)
+        # ---------- 1) 다운로드 ----------
+        _step(db, video, ST_DOWNLOADING)
         dl_dir = Path(settings.MEDIA_ROOT) / "videos"
 
         if getattr(settings, "USE_RAPIDAPI_DOWNLOAD", False) and settings.RAPIDAPI_KEY:
-            # RapidAPI 경로: file URL polling으로 최대 5분 걸릴 수 있음.
-            # 이 경우 30초 deadline은 무시하고 RapidAPI 자체 타임아웃(5분)을 따른다.
             from .rapidapi_download import download_via_rapidapi
             logger.info("video=%s RapidAPI 다운로드 사용", vid)
             file_path = download_via_rapidapi(
                 video.source_url or "", quality=settings.RAPIDAPI_QUALITY,
                 video_id=video.youtube_video_id,
             )
-            if not file_path:
-                logger.info("video=%s RapidAPI 다운로드 실패 -> 메타데이터 전용 폴백", vid)
-                _run_metadata_only(db, video, storage)
-                return
-            # RapidAPI는 시간이 오래 걸렸을 수 있으니 샘플링용 deadline을 새로 잡는다.
-            deadline = _time.monotonic() + 60.0
         else:
-            # 기존 yt-dlp 경로 (봇 차단 가능)
-            file_path = download_video(
-                video.youtube_video_id, dl_dir, timeout=8
-            )
-            if not file_path or _time.monotonic() > deadline:
-                logger.info("video=%s 다운로드 실패/시간초과 -> 메타데이터 전용 폴백", vid)
-                _run_metadata_only(db, video, storage)
-                return
+            file_path = download_video(video.youtube_video_id, dl_dir, timeout=8)
+
+        if not file_path:
+            logger.info("video=%s 다운로드 실패 -> 메타데이터 전용 폴백", vid)
+            _run_metadata_only(db, video, storage)
+            return
 
         video.file_path = file_path
         video.stored_filename = Path(file_path).name
         db.commit()
 
-        # 다운로드 완료 + mp4 기본 검증 (파일 존재/크기)
+        # 다운로드 완료 + 크기 검증
         try:
             _fsize = Path(file_path).stat().st_size
         except Exception:
             _fsize = 0
         logger.info("video=%s 다운로드 완료: %s (%.2f MB)",
                     vid, Path(file_path).name, _fsize / 1e6)
+        _step(db, video, ST_DOWNLOAD_DONE)
         if _fsize < 1024:
-            logger.warning("video=%s 다운로드 파일이 너무 작음(%d bytes) -> 손상 의심, 폴백",
-                           vid, _fsize)
+            logger.warning("video=%s 파일이 너무 작음(%d bytes) -> 폴백", vid, _fsize)
             _run_metadata_only(db, video, storage)
             return
 
-        # 2) 영상 정보 (길이) — 실제 영상인지 ffprobe로 검증
+        # ---------- 2) ffprobe 영상 검증 ----------
+        _step(db, video, ST_PROBING)
+        logger.info("video=%s ffprobe 시작", vid)
         try:
             info = probe_video(file_path)
             video.duration = getattr(info, "duration", 0.0) or 0.0
             video.width = getattr(info, "width", None)
             video.height = getattr(info, "height", None)
             db.commit()
-            # mp4 검증 로그: duration/해상도가 정상이면 실제 영상으로 확인
             if video.duration and video.duration > 0:
-                logger.info(
-                    "video=%s mp4 검증 OK: duration=%.1fs %sx%s (실제 영상 확인)",
-                    vid, video.duration, video.width, video.height,
-                )
+                logger.info("video=%s ffprobe 완료: duration=%.1fs %sx%s (실제 영상 확인)",
+                            vid, video.duration, video.width, video.height)
             else:
-                logger.warning(
-                    "video=%s mp4 검증 경고: duration=0 (영상이 아닐 수 있음)", vid
-                )
+                logger.warning("video=%s ffprobe: duration=0 (영상이 아닐 수 있음)", vid)
         except Exception:
-            logger.warning("probe 실패(무시): %s", vid, exc_info=True)
+            logger.warning("video=%s ffprobe 실패(무시)", vid, exc_info=True)
 
-        # 3) 4구간 샘플링 OCR (데드라인 적용)
-        _set_step(db, video, STEP_SAMPLING)
-        frame_dir = Path(get_settings().MEDIA_ROOT) / "frames" / vid
+        # 너무 긴 영상은 프레임만 추출하고 OCR은 줄임 (메모리/시간 보호, 중단은 안 함)
+        max_len = getattr(settings, "SAMPLING_MAX_DURATION", 0) or 0
+        too_long = max_len > 0 and (video.duration or 0) > max_len
+        if too_long:
+            logger.info("video=%s 긴 영상(%.0fs > %ds): OCR 프레임 수 축소",
+                        vid, video.duration or 0, max_len)
+
+        # ---------- 3) 프레임 추출 + OCR (메모리 안전) ----------
+        logger.info("video=%s scene/frame 추출 시작", vid)
+        frame_dir = Path(settings.MEDIA_ROOT) / "frames" / vid
+        max_frames = getattr(settings, "SAMPLING_MAX_FRAMES", 4) or 4
+        if too_long:
+            max_frames = min(max_frames, 2)
+        enable_ocr = getattr(settings, "ENABLE_OCR", True)
+
+        def _on_step(name: str) -> None:
+            _step(db, video, name)
+            if name == "extracting_frames":
+                logger.info("video=%s thumbnail/frame 추출 단계", vid)
+            elif name == "running_ocr":
+                logger.info("video=%s OCR 시작 (enable_ocr=%s)", vid, enable_ocr)
+
         samples = sample_segments(
-            file_path, video.duration or 0.0, frame_dir, deadline
+            file_path, video.duration or 0.0, frame_dir,
+            deadline=None,            # timeout 없음: 끝까지 진행
+            max_frames=max_frames,
+            enable_ocr=enable_ocr,
+            on_step=_on_step,
         )
+        logger.info("video=%s scene/frame + OCR 완료 (구간 %d개)", vid, len(samples))
 
-        # 4) OCR 키워드 + 제목 + 설명 통합 -> explainer로 요약/구조/팁 생성
-        ocr_blob = " ".join(
-            t for s in samples for t in s.ocr_texts
-        )
+        # ---------- 4) explainer (요약/구조/팁 생성) ----------
+        _step(db, video, ST_SUMMARY)
+        logger.info("video=%s explainer 시작", vid)
+        ocr_blob = " ".join(t for s in samples for t in s.ocr_texts)
         _run_metadata_with_ocr(db, video, ocr_blob)
-
-        # 5) 구간별 서술 채우기 (훅 유형/주제 활용)
+        logger.info("video=%s explainer 완료", vid)
         summary = video.summary
         hook_type = summary.hook_type if summary else ""
         topic = (summary.detected_keywords[0] if summary and summary.detected_keywords else "")

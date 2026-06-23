@@ -28,7 +28,8 @@ class Settings(BaseSettings):
 
     # --- 분석 옵션 ---
     ENABLE_OCR: bool = True
-    ENABLE_STT: bool = True
+    # STT(whisper)는 메모리가 무거워 기본 비활성. 필요시 ENABLE_STT=true로.
+    ENABLE_STT: bool = False
     WHISPER_MODEL: str = "tiny"  # tiny / base 권장
     # 한국어 형태소 분석기(Kiwi)로 명사 추출 정확도를 높인다.
     # true면 kiwipiepy 사용, 설치/실행 실패 시 자동으로 규칙 기반으로 fallback.
@@ -52,6 +53,9 @@ class Settings(BaseSettings):
     # analyzer가 yt-dlp 대신 RapidAPI로 영상을 받게 할지 (true면 RapidAPI 사용)
     USE_RAPIDAPI_DOWNLOAD: bool = False
     RAPIDAPI_QUALITY: str = "247"
+    # --- 샘플링 분석 메모리/길이 제어 (Render Free OOM 방지) ---
+    SAMPLING_MAX_FRAMES: int = 4       # OCR할 프레임 수 (4~6)
+    SAMPLING_MAX_DURATION: int = 0     # 이 초과 영상은 프레임 축소 (0=제한없음)
 
     # --- LLM 분석 (선택) ---
     # true이고 API 키가 있으면 LLM으로 더 풍부한 분석을 시도한다.

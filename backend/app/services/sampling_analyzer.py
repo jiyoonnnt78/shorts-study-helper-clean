@@ -70,48 +70,95 @@ def sample_segments(
     file_path: str,
     duration: float,
     frame_dir: Path,
-    deadline: float,
+    deadline: float | None = None,
+    max_frames: int = 4,
+    enable_ocr: bool = True,
+    on_step=None,
 ) -> list[StageSample]:
     """
-    4구간 대표 프레임을 뽑아 OCR한다.
-    deadline(time.monotonic 기준)을 넘기면 남은 구간은 OCR 없이 건너뛴다.
+    핵심 구간 대표 프레임을 뽑아 OCR한다.
+
+    메모리 안전 설계 (Render Free OOM 방지):
+    - 프레임을 먼저 전부 추출(가벼움)한 뒤, OCR reader를 1번만 로드해 순차 처리.
+    - 각 OCR 직후 gc로 메모리 즉시 회수.
+    - 마지막에 reader 명시적 해제.
+    - enable_ocr=False면 프레임만 추출(OCR 생략) -> 가장 가벼움.
+
+    on_step(step_name): 단계 진행을 알리는 콜백 (DB status 저장용).
+    deadline: None이면 시간 제한 없음(끝까지 진행). 값이 있으면 그 이후 OCR 생략.
     """
+    import gc
+
     from .ocr_service import (
         _extract_frame, _get_reader, _readtext, clean_ocr_results,
     )
 
     frame_dir.mkdir(parents=True, exist_ok=True)
     times = _stage_times(duration)
+    keys = STAGE_KEYS[:max_frames] if max_frames else STAGE_KEYS
     samples: list[StageSample] = []
 
-    reader = None
-    for key in STAGE_KEYS:
+    # ---------- 1) 프레임 추출 (가벼움, OCR 전에 전부) ----------
+    if on_step:
+        on_step("extracting_frames")
+    for key in keys:
         at = times[key]
         s = StageSample(key=key, label=STAGE_LABELS[key], at_sec=round(at, 2))
-
-        # 시간 초과면 프레임/OCR 생략 (구조는 제목 기반으로라도 채움)
-        if time.monotonic() > deadline:
-            logger.info("시간 초과 -> %s 구간 프레임/OCR 생략", key)
-            samples.append(s)
-            continue
-
-        # 1) 프레임 추출
         out = frame_dir / f"{key}.jpg"
-        if _extract_frame(file_path, at, out):
-            s.screenshot_path = str(out)
-            s.screenshot_name = out.name
-
-            # 2) OCR (reader는 처음 필요할 때 1회 로드)
-            if time.monotonic() <= deadline:
-                try:
-                    if reader is None:
-                        reader = _get_reader()
-                    if reader is not None:
-                        raw = _readtext(reader, str(out))
-                        s.ocr_texts = clean_ocr_results(raw)
-                except Exception:
-                    logger.warning("%s 구간 OCR 실패", key, exc_info=True)
+        try:
+            if _extract_frame(file_path, at, out):
+                s.screenshot_path = str(out)
+                s.screenshot_name = out.name
+                logger.info("프레임 추출 완료: %s (%.1fs)", key, at)
+        except Exception:
+            logger.warning("%s 구간 프레임 추출 실패", key, exc_info=True)
         samples.append(s)
+
+    # ---------- 2) OCR (옵션, reader 1회 로드 -> 순차 -> 해제) ----------
+    if not enable_ocr:
+        logger.info("OCR 비활성화 -> 프레임만 사용")
+        return samples
+
+    if on_step:
+        on_step("running_ocr")
+    reader = None
+    reader_failed = False
+    try:
+        for s in samples:
+            if not s.screenshot_path:
+                continue
+            if reader_failed:
+                break  # reader 로드가 한 번 실패하면 더 시도하지 않음
+            if deadline is not None and time.monotonic() > deadline:
+                logger.info("deadline 초과 -> %s 이후 OCR 생략", s.key)
+                break
+            try:
+                if reader is None:
+                    logger.info("OCR reader 로딩 시작 (easyocr)")
+                    try:
+                        reader = _get_reader()
+                    except Exception:
+                        logger.warning("OCR reader 로드 실패 -> OCR 생략(프레임은 유지)",
+                                       exc_info=True)
+                        reader_failed = True
+                        break
+                    if reader is None:
+                        logger.warning("OCR reader None -> OCR 생략(프레임은 유지)")
+                        reader_failed = True
+                        break
+                    logger.info("OCR reader 로딩 완료")
+                raw = _readtext(reader, s.screenshot_path)
+                s.ocr_texts = clean_ocr_results(raw)
+                logger.info("OCR 완료: %s (%d개 텍스트)", s.key, len(s.ocr_texts))
+            except Exception:
+                logger.warning("%s 구간 OCR 실패", s.key, exc_info=True)
+            finally:
+                gc.collect()  # 각 프레임 OCR 후 메모리 즉시 회수
+    finally:
+        # reader 명시적 해제 (easyocr 모델 메모리 반환)
+        reader = None
+        gc.collect()
+        logger.info("OCR reader 해제 완료")
 
     return samples
 
