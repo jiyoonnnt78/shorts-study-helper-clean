@@ -45,3 +45,21 @@ body {
     transition-duration: 0.001ms !important;
   }
 }
+
+/* PDF로 저장(인쇄) 시: 버튼/배경 등 불필요한 요소 숨기고 결과만 깔끔하게 출력 */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  body {
+    background: white !important;
+  }
+  main {
+    max-width: 100% !important;
+  }
+  /* 카드 그림자/배경은 인쇄 시 잉크 절약을 위해 옅게 */
+  section {
+    box-shadow: none !important;
+    break-inside: avoid;
+  }
+}

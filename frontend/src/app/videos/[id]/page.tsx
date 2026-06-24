@@ -220,7 +220,13 @@ export default function ResultPage() {
         {/* 개발자용 분석 패널은 숨김 (OCR/STT 미사용으로 불필요) */}
 
         {/* 액션 */}
-        <div className="mt-2 flex flex-wrap items-center justify-center gap-3">
+        <div className="no-print mt-2 flex flex-wrap items-center justify-center gap-3">
+          <button
+            onClick={() => window.print()}
+            className="rounded-full bg-mint px-6 py-3 font-display text-lg text-white shadow-soft transition-transform hover:scale-105"
+          >
+            🖨️ PDF로 저장 / 공유
+          </button>
           <button
             onClick={() => router.push("/")}
             className="rounded-full bg-blueberry px-6 py-3 font-display text-lg text-white shadow-soft transition-transform hover:scale-105"
